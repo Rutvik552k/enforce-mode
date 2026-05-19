@@ -42,7 +42,10 @@ $hookFiles = @(
     'enforce-statusline.sh',
     'enforce-research-gate.js',
     'enforce-test-gate.js',
-    'enforce-pre-completion.js'
+    'enforce-pre-completion.js',
+    'enforce-write-guard.js',
+    'enforce-bash-guard.js',
+    'enforce-stop-guard.js'
 )
 foreach ($file in $hookFiles) {
     Copy-Item (Join-Path $ScriptDir $file) -Destination $HooksDir -Force
@@ -98,32 +101,32 @@ if (!upsHooks.some(h => h.command && h.command.includes('enforce-mode-tracker'))
   });
 }
 
-// PreToolUse hooks (enforcement gates)
+// PreToolUse — consolidated enforcement guards
 if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
 const ptuHooks = settings.hooks.PreToolUse;
 
-if (!ptuHooks.some(h => h.command && h.command.includes('enforce-research-gate'))) {
+if (!ptuHooks.some(h => h.command && h.command.includes('enforce-write-guard'))) {
   ptuHooks.push({
     matcher: 'Write|Edit|NotebookEdit',
-    command: 'node $HooksDirFwd/enforce-research-gate.js',
+    command: 'node $HooksDirFwd/enforce-write-guard.js',
     timeout: 5000
   });
 }
 
-if (!ptuHooks.some(h => h.command && h.command.includes('enforce-test-gate'))) {
+if (!ptuHooks.some(h => h.command && h.command.includes('enforce-bash-guard'))) {
   ptuHooks.push({
     matcher: 'Bash',
-    command: 'node $HooksDirFwd/enforce-test-gate.js',
+    command: 'node $HooksDirFwd/enforce-bash-guard.js',
     timeout: 5000
   });
 }
 
-// Stop hook (pre-completion analysis)
+// Stop — consolidated completion guard
 if (!settings.hooks.Stop) settings.hooks.Stop = [];
 const stopHooks = settings.hooks.Stop;
-if (!stopHooks.some(h => h.command && h.command.includes('enforce-pre-completion'))) {
+if (!stopHooks.some(h => h.command && h.command.includes('enforce-stop-guard'))) {
   stopHooks.push({
-    command: 'node $HooksDirFwd/enforce-pre-completion.js',
+    command: 'node $HooksDirFwd/enforce-stop-guard.js',
     timeout: 5000
   });
 }

@@ -50,10 +50,13 @@ cp "$SCRIPT_DIR/enforce-statusline.ps1" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-research-gate.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-test-gate.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-pre-completion.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-write-guard.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-bash-guard.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-stop-guard.js" "$HOOKS_DIR/"
 chmod +x "$HOOKS_DIR/enforce-statusline.sh" 2>/dev/null || true
-chmod +x "$HOOKS_DIR/enforce-research-gate.js" 2>/dev/null || true
-chmod +x "$HOOKS_DIR/enforce-test-gate.js" 2>/dev/null || true
-chmod +x "$HOOKS_DIR/enforce-pre-completion.js" 2>/dev/null || true
+chmod +x "$HOOKS_DIR/enforce-write-guard.js" 2>/dev/null || true
+chmod +x "$HOOKS_DIR/enforce-bash-guard.js" 2>/dev/null || true
+chmod +x "$HOOKS_DIR/enforce-stop-guard.js" 2>/dev/null || true
 
 # Copy rules directory
 mkdir -p "$CLAUDE_DIR/rules/domains"
@@ -123,43 +126,43 @@ if (!upsExists) {
   });
 }
 
-// PreToolUse hooks (enforcement gates)
+// PreToolUse hooks — consolidated enforcement guards
 if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
 const ptuHooks = settings.hooks.PreToolUse;
 
-// Research gate: warn when writing code with imports but no web research
-const rgExists = ptuHooks.some(h =>
-  h.command && h.command.includes('enforce-research-gate')
+// Write guard: secrets + research + security (replaces research-gate)
+const wgExists = ptuHooks.some(h =>
+  h.command && h.command.includes('enforce-write-guard')
 );
-if (!rgExists) {
+if (!wgExists) {
   ptuHooks.push({
     matcher: 'Write|Edit|NotebookEdit',
-    command: 'node $NODE_HOOKS_DIR/enforce-research-gate.js',
+    command: 'node $NODE_HOOKS_DIR/enforce-write-guard.js',
     timeout: 5000
   });
 }
 
-// Test gate: block git commit/push without prior test execution
-const tgExists = ptuHooks.some(h =>
-  h.command && h.command.includes('enforce-test-gate')
+// Bash guard: git + tests + inference-bg + cost (replaces test-gate)
+const bgExists = ptuHooks.some(h =>
+  h.command && h.command.includes('enforce-bash-guard')
 );
-if (!tgExists) {
+if (!bgExists) {
   ptuHooks.push({
     matcher: 'Bash',
-    command: 'node $NODE_HOOKS_DIR/enforce-test-gate.js',
+    command: 'node $NODE_HOOKS_DIR/enforce-bash-guard.js',
     timeout: 5000
   });
 }
 
-// Stop hook (pre-completion analysis)
+// Stop guard: completion checks + session log + requirements (replaces pre-completion)
 if (!settings.hooks.Stop) settings.hooks.Stop = [];
 const stopHooks = settings.hooks.Stop;
-const pcExists = stopHooks.some(h =>
-  h.command && h.command.includes('enforce-pre-completion')
+const sgExists = stopHooks.some(h =>
+  h.command && h.command.includes('enforce-stop-guard')
 );
-if (!pcExists) {
+if (!sgExists) {
   stopHooks.push({
-    command: 'node $NODE_HOOKS_DIR/enforce-pre-completion.js',
+    command: 'node $NODE_HOOKS_DIR/enforce-stop-guard.js',
     timeout: 5000
   });
 }

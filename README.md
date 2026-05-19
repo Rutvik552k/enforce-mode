@@ -185,22 +185,57 @@ ALWAYS ACTIVE. Every response...
 
 Beyond text rules injected at session start, enforce-mode includes **3 runtime hooks** that actively gate Claude's behavior by intercepting tool calls:
 
-| Hook | Event | Rule Enforced | Behavior |
-|------|-------|---------------|----------|
-| `enforce-research-gate.js` | PreToolUse (Write/Edit/NotebookEdit) | #1 Research before code, #6 Web-research mandate | **Soft gate** — injects warning when writing code with external library imports but no WebSearch/WebFetch/context7 detected in session transcript |
-| `enforce-test-gate.js` | PreToolUse (Bash) | #2 Git discipline, #3 Test before ship | **Hard block (exit 2)** — prevents `git commit`/`git push` if no test execution found in session transcript |
-| `enforce-pre-completion.js` | Stop | #3 Test before ship, #4 Pre-completion analysis | **Soft gate** — warns when code was written but no tests were run before response completion |
+### Consolidated Guards (v2 — recommended)
+
+3 hooks, one per event type. Maximum coverage, minimum latency:
+
+| Hook | Event | Rules Covered | Hard Blocks |
+|------|-------|---------------|-------------|
+| `enforce-write-guard.js` | PreToolUse (Write/Edit/NotebookEdit) | #1,6 research + #9,37,38 secrets + #28-36 security | **Secrets** (exit 2) — API keys, tokens, private keys, DB URIs |
+| `enforce-bash-guard.js` | PreToolUse (Bash) | #2,7-11 git + #3,12 tests + #16-19 inference-bg + #24-27 cost | **Foreground inference** (exit 2), **git commit without tests** (exit 2), **git add .** (exit 2) |
+| `enforce-stop-guard.js` | Stop | #3,4,12-15 tests + #1,6 research + #53 session log + #55 requirements | Soft warnings (5 checks) |
+
+### What gets HARD BLOCKED (exit 2, physically impossible)
+
+| Action | Rule | Why |
+|--------|------|-----|
+| Writing code with hardcoded secrets (AWS keys, GitHub PATs, Stripe keys, private keys, DB URIs, JWTs) | #9, #37, #38 | Secrets in code = instant security breach |
+| `git commit` / `git push` without running tests | #2, #3, #7, #12 | Untested code in git history is irreversible |
+| `git add .` / `git add -A` | #9, #10, #11 | Catch-all staging may include secrets or binaries |
+| Running inference/GPU tasks in foreground (python inference.py, torchrun, ffmpeg video encoding) | #16-19 | Main agent must never sit idle — always background |
+
+### What gets SOFT WARNED (injected reminder)
+
+| Check | Rule | When |
+|-------|------|------|
+| Code with imports but no web research | #1, #6 | Write/Edit with import statements, no WebSearch in transcript |
+| Security anti-patterns (eval, SQL concat, CORS *, disabled SSL) | #28-36 | Detected in code being written |
+| Cloud cost operations (AWS/GCP/Azure instance launch, model downloads) | #24-27 | Detected in bash commands |
+| Code written but no tests ran | #3, #12 | At response completion |
+| Tests ran before last code change (stale) | #3, #12 | At response completion |
+| Session log not updated | #53 | At response completion |
+| New imports but requirements not updated | #55 | At response completion |
+| Multiple files changed without pre-completion review | #4, #56-58 | At response completion (3+ files) |
+
+### Legacy Guards (v1 — still included)
+
+| Hook | Event | Rule | Note |
+|------|-------|------|------|
+| `enforce-research-gate.js` | PreToolUse (Write/Edit/NotebookEdit) | #1, #6 | Subset of write-guard |
+| `enforce-test-gate.js` | PreToolUse (Bash) | #2, #3 | Subset of bash-guard |
+| `enforce-pre-completion.js` | Stop | #3, #4 | Subset of stop-guard |
 
 ### How they work
 
-- Each hook reads the session **transcript** (JSONL file) to check what tools were used
-- `enforce-research-gate.js` scans for WebSearch, WebFetch, or Context7 MCP tool usage before allowing code writes with external imports
-- `enforce-test-gate.js` scans for test commands (`cargo test`, `pytest`, `npm test`, etc.) and **blocks git operations** with exit code 2 if none found
-- `enforce-pre-completion.js` checks if tests were run **after** the last code write, catching stale test results
+- Each hook reads stdin JSON (tool_name, tool_input, transcript_path)
+- **Write guard**: Scans source code with 17 secret-detection regexes (gitleaks-inspired), 9 security anti-patterns, and import detection
+- **Bash guard**: Pattern-matches commands against inference patterns, git operations, and cost triggers. Checks transcript for test execution history
+- **Stop guard**: Single O(n) transcript scan tracking write positions, test positions, research usage, session log updates, and requirements changes
+- All hooks are pure Node.js stdlib — zero npm dependencies, <10ms execution
 
 ### Why both text rules AND hooks?
 
-Text rules alone are advisory — Claude can ignore them under task pressure. Hooks are **mechanical enforcement**: the test-gate physically blocks `git commit` regardless of what Claude "decides" to do. Think of text rules as guidelines and hooks as guardrails.
+Text rules alone are advisory — Claude can ignore them under task pressure. Hooks are **mechanical enforcement**: the write-guard physically blocks secrets from being written, the bash-guard prevents untested commits, and the stop-guard catches missing test runs. Think of text rules as guidelines and hooks as guardrails.
 
 ---
 
@@ -285,9 +320,12 @@ enforce-mode/
 │   ├── enforce-config.js        # Config resolver (env > file > default)
 │   ├── enforce-detect.js        # Weighted signal scoring for domain detection
 │   ├── enforce-rules.js         # Rule registry + context budget manager
-│   ├── enforce-research-gate.js  # PreToolUse — warn on unresearched code writes
-│   ├── enforce-test-gate.js     # PreToolUse — block git commit/push without tests
-│   ├── enforce-pre-completion.js # Stop — warn if code written but untested
+│   ├── enforce-write-guard.js    # PreToolUse — secrets + research + security (consolidated v2)
+│   ├── enforce-bash-guard.js    # PreToolUse — git + tests + inference-bg + cost (consolidated v2)
+│   ├── enforce-stop-guard.js    # Stop — tests + research + session log + requirements (consolidated v2)
+│   ├── enforce-research-gate.js  # PreToolUse — research check (v1, subset of write-guard)
+│   ├── enforce-test-gate.js     # PreToolUse — test check (v1, subset of bash-guard)
+│   ├── enforce-pre-completion.js # Stop — test check (v1, subset of stop-guard)
 │   ├── enforce-statusline.sh    # Unix statusline badge
 │   ├── enforce-statusline.ps1   # Windows statusline badge
 │   ├── install.sh               # Standalone Unix installer
