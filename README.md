@@ -1,120 +1,56 @@
 # enforce-mode
 
-**Always-on universal engineering rules + project-aware domain rules for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).**
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Tests: 39 passing](https://img.shields.io/badge/Tests-39%20passing-brightgreen.svg)](#testing)
+[![Node.js](https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg)](#architecture)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#installation)
 
-enforce-mode is a Claude Code plugin that injects engineering best practices into every session. Universal rules (research-first, git discipline, test-before-ship) are always active. Domain-specific rules (ML inference, GPU hardware, video pipelines, API security, cost tracking) activate automatically based on what your project actually contains — detected via weighted signal scoring of your working directory.
+**Always-on universal engineering rules + project-aware domain rules for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).**
 
 > Think of it as ESLint for AI-assisted engineering — always on, context-aware, graduated enforcement.
 
----
+enforce-mode injects engineering best practices into every Claude Code session. Universal rules (research-first, git discipline, test-before-ship) are always active. Domain-specific rules (ML inference, GPU hardware, video pipelines, API security, cost tracking) activate automatically based on what your project contains — detected via weighted signal scoring.
 
-## How It Works
-
-```
-Claude Code session starts
-  │
-  ▼
-SessionStart hook fires (enforce-activate.js)
-  │
-  ├─ 1. Resolve level: env var → config file → default ('solo')
-  ├─ 2. Scan cwd: single O(n) readdirSync + lazy manifest parsing
-  ├─ 3. Score domains: weighted signals (deps × 3, markers × 2, extensions × 1)
-  ├─ 4. Assemble rules: universal + domain (level-filtered, budget-capped)
-  └─ 5. Emit to stdout → becomes <system-reminder> → Claude follows rules
-```
-
-**Zero npm dependencies. Pure Node.js stdlib. < 10ms on typical projects.**
+**Zero npm dependencies. Pure Node.js stdlib. < 10ms startup.**
 
 ---
 
-## Enforcement Levels
+## Table of Contents
 
-Three graduated levels control rule strictness:
-
-| Level | What's Enforced | Use Case |
-|-------|----------------|----------|
-| **solo** | Universal rules + domain WARN rules | Solo dev, prototyping |
-| **team** | + session docs, parallel execution, cost tracking, requirements sync | Shared infra, team projects |
-| **prod** | + full security stack, DSA efficiency, P99 monitoring, DDoS protection | Production systems serving real users |
-
-### Universal Rules (all levels)
-
-These fire in **every session**, regardless of project type:
-
-- **Research before code** — web-search to verify APIs, function signatures, and library versions before implementing
-- **Git discipline** — never commit without asking, never push broken code, check for secrets
-- **Test before ship** — run tests and show output; "it should work" is not valid
-- **Pre-completion analysis** — walk changed code paths, check edge cases, security review
-- **Web-research mandate** — verify current docs before implementing external APIs
-- **Verify before recommend** — never swap agreed decisions without asking user first
-
-### Team additions
-
-- Session documentation with decisions and rationale
-- Parallel execution mandate (background subagents for long tasks)
-- Requirements file sync with all imports
-
-### Prod additions
-
-- Full security: auth, rate limiting, input validation, file upload protection, prompt injection defense
-- DSA efficiency: Big-O analysis, memory budgets, streaming, P99 tracking
-- Secrets management and DDoS protection
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [Enforcement Levels](#enforcement-levels)
+- [Enforcement Hooks (Hard Gates)](#enforcement-hooks-hard-gates)
+- [Domain Detection](#domain-detection)
+- [Configuration](#configuration)
+- [Adding Custom Domains](#adding-custom-domains)
+- [Architecture](#architecture)
+- [Testing](#testing)
+- [Comparison with Caveman Mode](#comparison-with-caveman-mode)
+- [Inspired By](#inspired-by)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## Domain Detection
+## Quick Start
 
-Domains activate via **weighted signal scoring**. Each signal type has a weight; when cumulative score meets the threshold, the domain turns on.
-
-| Domain | Key Signals (weight) | Threshold | What It Enforces |
-|--------|---------------------|-----------|------------------|
-| **ml-inference** | torch (3), transformers (3), diffusers (2), .safetensors (2), models/ dir (1) | 4 | Background inference, architecture-first, verify weights, pipeline documentation |
-| **gpu-hardware** | cupy (3), triton (3), flash-attn (3), .cu files (3), cuda/ dir (2) | 4 | VRAM math, multi-GPU verification, OOM prevention, cost per operation |
-| **video-pipeline** | ffmpeg-python (3), moviepy (3), opencv-python (2), decord (3), renders/ dir (2) | 4 | Parallel execution, streaming-first, codec awareness, resource limits |
-| **api-security** | fastapi (2), express (2), django (2), Dockerfile (2), k8s/ dir (2) | 3 | Auth on endpoints, rate limiting, input validation, prompt injection defense |
-| **cost-tracking** | boto3 (2), google-cloud (2), terraform/ dir (3), .tf files (2) | 3 | Cost reporting, budget guards, instance awareness, egress costs |
-
-**Multiple domains activate simultaneously.** A video ML project with a FastAPI backend gets: `ml-inference` + `video-pipeline` + `api-security`.
-
-### Signal Weights
-
-| Signal Type | Weight Range | Why |
-|-------------|-------------|-----|
-| Dependencies | 2-3 | Strongest signal — `torch` in requirements.txt definitively indicates ML |
-| Marker files | 1-2 | Strong — `Dockerfile` means containerized |
-| File extensions | 1-2 | Moderate — `.cu` files mean CUDA kernels |
-| Directories | 1-2 | Moderate — `models/` directory suggests ML |
-
-### Domain Rules by Severity
-
-Each domain's rules use severity tags filtered by enforcement level:
-
-| Tag | Minimum Level | Example |
-|-----|--------------|---------|
-| `[WARN]` | solo | "Background all inference tasks" |
-| `[STRICT]` | team | "Dispatch GPU tasks to subagents" |
-| `[CRITICAL]` | prod | "Verify model weight checksums" |
-
----
-
-## Installation
-
-### Via Claude Code plugin marketplace (recommended)
+### Install via Claude Code plugin (recommended)
 
 ```bash
 claude plugin install enforce-mode
 ```
 
-### Standalone — Unix/macOS
+### Or install standalone
 
+**Unix / macOS:**
 ```bash
 git clone https://github.com/Rutvik552k/enforce-mode.git
 cd enforce-mode
 bash hooks/install.sh
 ```
 
-### Standalone — Windows
-
+**Windows:**
 ```powershell
 git clone https://github.com/Rutvik552k/enforce-mode.git
 cd enforce-mode
@@ -127,10 +63,6 @@ Both installers:
 - Configure statusline badge
 - Are idempotent (safe to re-run)
 - Create backup of settings.json before modification
-
----
-
-## Usage
 
 ### Switch levels
 
@@ -145,39 +77,72 @@ Both installers:
 ### Deactivate
 
 ```
-"stop enforce"    # deactivate
-"normal mode"     # deactivate
+"stop enforce"    # natural language deactivation
+"normal mode"     # natural language deactivation
 ```
 
-### What you see
-
-The statusline shows the active level:
+### Statusline badge
 
 ```
-[ENFORCE:SOLO]     # bright red badge
+[ENFORCE:SOLO]     # bright red badge in your terminal
 [ENFORCE:TEAM]
 [ENFORCE:PROD]
 ```
 
-### What Claude sees
+---
 
-A `<system-reminder>` block injected at session start:
+## How It Works
 
 ```
-ENFORCE MODE ACTIVE — level: team | domains: ml-inference, api-security
-
-## Universal Rules
-- RESEARCH BEFORE CODE: Web-search to verify APIs...
-- GIT DISCIPLINE: NEVER commit without asking...
-...
-
-## ML Inference Domain Rules
-- [WARN] BACKGROUND INFERENCE: ALL model inference...
-- [STRICT] SUBAGENT GPU: Every model forward pass...
-
-## Persistence
-ALWAYS ACTIVE. Every response...
+Claude Code session starts
+  |
+  v
+SessionStart hook fires (enforce-activate.js)
+  |
+  +-- 1. Resolve level: env var > config file > default ('solo')
+  +-- 2. Scan cwd: single readdirSync + lazy manifest parsing
+  +-- 3. Score domains: weighted signals (deps x3, markers x2, extensions x1)
+  +-- 4. Assemble rules: universal + domain (level-filtered, budget-capped)
+  +-- 5. Emit to stdout -> becomes <system-reminder> -> Claude follows rules
 ```
+
+---
+
+## Enforcement Levels
+
+Three graduated levels control rule strictness:
+
+| Level | What's Enforced | Use Case |
+|-------|----------------|----------|
+| **solo** | Universal rules + domain WARN rules | Solo dev, prototyping |
+| **team** | + session docs, parallel execution, cost tracking, requirements sync | Shared infra, team projects |
+| **prod** | + full security stack, DSA efficiency, P99 monitoring, DDoS protection | Production systems |
+
+### Universal Rules (all levels)
+
+| # | Rule | Description |
+|---|------|-------------|
+| 1 | **Research before code** | Web-search to verify APIs, function signatures, and library versions before implementing |
+| 2 | **Git discipline** | Never commit without asking, never push broken code, check for secrets |
+| 3 | **Test before ship** | Run tests and show output — "it should work" is not valid |
+| 4 | **Pre-completion analysis** | Walk changed code paths, check edge cases, security review |
+| 5 | **Web-research mandate** | Verify current docs before implementing external APIs |
+| 6 | **Verify before recommend** | Never swap agreed decisions without asking user first |
+
+### Team additions (level >= team)
+
+| # | Rule | Description |
+|---|------|-------------|
+| 7 | **Session documentation** | Track decisions, models verified, issues found, test results, cost estimates |
+| 8 | **Parallel execution** | Long-running tasks must use background subagents; main agent never idles |
+| 9 | **Requirements sync** | Keep dependency files in sync with all imports |
+
+### Prod additions (level >= prod)
+
+| # | Rule | Description |
+|---|------|-------------|
+| 10 | **DSA efficiency** | Big-O analysis, memory budgets, streaming design, P99 tracking |
+| 11 | **Full security** | Auth, rate limiting, input validation, file upload protection, prompt injection defense, secrets management, DDoS protection |
 
 ---
 
@@ -239,6 +204,43 @@ Text rules alone are advisory — Claude can ignore them under task pressure. Ho
 
 ---
 
+## Domain Detection
+
+Domains activate via **weighted signal scoring**. Each signal type has a weight; when cumulative score meets the threshold, the domain turns on.
+
+### Supported Domains
+
+| Domain | Key Signals (weight) | Threshold | What It Enforces |
+|--------|---------------------|-----------|------------------|
+| **ml-inference** | torch (3), transformers (3), diffusers (2), .safetensors (2), models/ (1) | 4 | Background inference, architecture-first, verify weights, pipeline docs |
+| **gpu-hardware** | cupy (3), triton (3), flash-attn (3), .cu files (3), cuda/ (2) | 4 | VRAM math, multi-GPU verification, OOM prevention, cost per operation |
+| **video-pipeline** | ffmpeg-python (3), moviepy (3), opencv-python (2), decord (3), renders/ (2) | 4 | Parallel execution, streaming-first, codec awareness, resource limits |
+| **api-security** | fastapi (2), express (2), django (2), Dockerfile (2), k8s/ (2) | 3 | Auth on endpoints, rate limiting, input validation, prompt injection defense |
+| **cost-tracking** | boto3 (2), google-cloud (2), terraform/ (3), .tf files (2) | 3 | Cost reporting, budget guards, instance awareness, egress costs |
+
+Multiple domains activate simultaneously. A video ML project with a FastAPI backend gets: `ml-inference` + `video-pipeline` + `api-security`.
+
+### Signal Weights
+
+| Signal Type | Weight | Rationale |
+|-------------|--------|-----------|
+| Dependencies | 2-3 | Strongest signal — `torch` in requirements.txt definitively indicates ML |
+| Marker files | 1-2 | Strong — `Dockerfile` means containerized |
+| File extensions | 1-2 | Moderate — `.cu` files mean CUDA kernels |
+| Directories | 1-2 | Moderate — `models/` directory suggests ML |
+
+### Rule Severity by Level
+
+Each domain's rules use severity tags filtered by enforcement level:
+
+| Tag | Minimum Level | Example |
+|-----|--------------|---------|
+| `[WARN]` | solo | "Background all inference tasks" |
+| `[STRICT]` | team | "Dispatch GPU tasks to subagents" |
+| `[CRITICAL]` | prod | "Verify model weight checksums" |
+
+---
+
 ## Configuration
 
 ### Environment variable (highest priority)
@@ -268,7 +270,7 @@ export ENFORCE_DEFAULT_LEVEL=prod
 
 ## Adding Custom Domains
 
-1. **Add detection rules** to `hooks/enforce-detect.js` → `DOMAIN_RULES` array:
+**Step 1.** Add detection rules to `hooks/enforce-detect.js` in the `DOMAIN_RULES` array:
 
 ```javascript
 {
@@ -291,90 +293,99 @@ export ENFORCE_DEFAULT_LEVEL=prod
 }
 ```
 
-2. **Create rule file** at `rules/domains/my-domain.md`:
+**Step 2.** Create a rule file at `rules/domains/my-domain.md`:
 
 ```markdown
 ## My Domain Rules
 
-- [WARN] Rule that applies at solo level and above
-- [STRICT] Rule that applies at team level and above
-- [CRITICAL] Rule that applies at prod level only
+- [WARN] Rule at solo level and above
+- [STRICT] Rule at team level and above
+- [CRITICAL] Rule at prod level only
 ```
 
-3. Done. The rule engine picks it up automatically.
+**Step 3.** Done. The rule engine picks it up automatically.
 
 ---
 
 ## Architecture
 
-### File structure
+### File Structure
 
 ```
 enforce-mode/
-├── .claude-plugin/
-│   ├── plugin.json              # Hook declarations
-│   └── marketplace.json         # Marketplace metadata
-├── hooks/
-│   ├── enforce-activate.js      # SessionStart — detect + emit rules
-│   ├── enforce-mode-tracker.js  # UserPromptSubmit — track /enforce commands
-│   ├── enforce-config.js        # Config resolver (env > file > default)
-│   ├── enforce-detect.js        # Weighted signal scoring for domain detection
-│   ├── enforce-rules.js         # Rule registry + context budget manager
-│   ├── enforce-write-guard.js    # PreToolUse — secrets + research + security (consolidated v2)
-│   ├── enforce-bash-guard.js    # PreToolUse — git + tests + inference-bg + cost (consolidated v2)
-│   ├── enforce-stop-guard.js    # Stop — tests + research + session log + requirements (consolidated v2)
-│   ├── enforce-research-gate.js  # PreToolUse — research check (v1, subset of write-guard)
-│   ├── enforce-test-gate.js     # PreToolUse — test check (v1, subset of bash-guard)
-│   ├── enforce-pre-completion.js # Stop — test check (v1, subset of stop-guard)
-│   ├── enforce-statusline.sh    # Unix statusline badge
-│   ├── enforce-statusline.ps1   # Windows statusline badge
-│   ├── install.sh               # Standalone Unix installer
-│   └── install.ps1              # Standalone Windows installer
-├── skills/
-│   └── enforce/
-│       └── SKILL.md             # Source of truth for all rules
-├── rules/
-│   ├── universal.md             # Lightweight fallback rule
-│   └── domains/
-│       ├── ml-inference.md
-│       ├── gpu-hardware.md
-│       ├── video-pipeline.md
-│       ├── api-security.md
-│       └── cost-tracking.md
-├── commands/
-│   └── enforce.toml             # /enforce slash command
-├── tests/
-│   ├── test-config.js           # 8 tests
-│   ├── test-detect.js           # 13 tests
-│   └── test-rules.js            # 18 tests
-├── README.md
-└── LICENSE
+|
++-- .claude-plugin/
+|   +-- plugin.json              # Hook declarations for Claude Code
+|   +-- marketplace.json         # Marketplace metadata
+|
++-- hooks/
+|   +-- enforce-activate.js      # SessionStart - detect + emit rules
+|   +-- enforce-mode-tracker.js  # UserPromptSubmit - track /enforce commands
+|   +-- enforce-config.js        # Config resolver (env > file > default)
+|   +-- enforce-detect.js        # Weighted signal scoring for domain detection
+|   +-- enforce-rules.js         # Rule registry + context budget manager
+|   +-- enforce-write-guard.js   # PreToolUse - secrets + research + security (v2)
+|   +-- enforce-bash-guard.js    # PreToolUse - git + tests + inference-bg + cost (v2)
+|   +-- enforce-stop-guard.js    # Stop - tests + research + session log + requirements (v2)
+|   +-- enforce-research-gate.js # PreToolUse - research check (v1 legacy)
+|   +-- enforce-test-gate.js     # PreToolUse - test check (v1 legacy)
+|   +-- enforce-pre-completion.js # Stop - test check (v1 legacy)
+|   +-- enforce-statusline.sh    # Unix statusline badge
+|   +-- enforce-statusline.ps1   # Windows statusline badge
+|   +-- install.sh               # Standalone Unix installer
+|   +-- install.ps1              # Standalone Windows installer
+|
++-- rules/
+|   +-- universal.md             # Lightweight fallback rule file
+|   +-- domains/
+|       +-- ml-inference.md      # ML/AI inference rules
+|       +-- gpu-hardware.md      # GPU and VRAM management rules
+|       +-- video-pipeline.md    # Video processing rules
+|       +-- api-security.md      # API security rules
+|       +-- cost-tracking.md     # Cloud cost tracking rules
+|
++-- skills/
+|   +-- enforce/
+|       +-- SKILL.md             # Source of truth for all rules
+|
++-- commands/
+|   +-- enforce.toml             # /enforce slash command definition
+|
++-- tests/
+|   +-- test-config.js           #  8 tests - config resolution
+|   +-- test-detect.js           # 13 tests - domain detection + dep parsing
+|   +-- test-rules.js            # 18 tests - rule assembly + level filtering + budget
+|
++-- .gitignore
++-- CLAUDE.md                    # Project instructions for Claude Code
++-- README.md
++-- LICENSE                      # MIT
 ```
 
-### Dependency graph
+### Dependency Graph
 
 ```
-enforce-activate.js (entry point)
-  ├── enforce-config.js    → getDefaultLevel()
-  ├── enforce-detect.js    → detectDomains(cwd)
-  │   └── internal parsers: getPythonDeps, getPackageJsonDeps, getGoDeps, getRustDeps, getComposerDeps
-  └── enforce-rules.js     → buildContext(level, domains, pluginRoot)
-      └── reads rules/domains/*.md at runtime
+enforce-activate.js (SessionStart entry point)
+  +-- enforce-config.js    -> getDefaultLevel()
+  +-- enforce-detect.js    -> detectDomains(cwd)
+  |   +-- parsers: getPythonDeps, getPackageJsonDeps, getGoDeps, getRustDeps, getComposerDeps
+  +-- enforce-rules.js     -> buildContext(level, domains, pluginRoot)
+      +-- reads rules/domains/*.md at runtime
 
 enforce-mode-tracker.js (UserPromptSubmit)
-  └── enforce-config.js    → getDefaultLevel()
+  +-- enforce-config.js    -> getDefaultLevel()
 
-enforce-research-gate.js (PreToolUse: Write|Edit|NotebookEdit)
-  └── reads transcript_path → checks for WebSearch/WebFetch/context7 usage
+enforce-write-guard.js (PreToolUse: Write|Edit|NotebookEdit)
+  +-- reads transcript_path -> checks for WebSearch/WebFetch/context7 usage
 
-enforce-test-gate.js (PreToolUse: Bash)
-  └── reads transcript_path → checks for test/build command execution
+enforce-bash-guard.js (PreToolUse: Bash)
+  +-- reads transcript_path -> checks for test/build command execution
 
-enforce-pre-completion.js (Stop)
-  └── reads transcript_path → checks write-then-test ordering
+enforce-stop-guard.js (Stop)
+  +-- reads transcript_path -> checks write-then-test ordering
 ```
 
-### Context budget
+### Context Budget
 
 | Component | Budget |
 |-----------|--------|
@@ -382,29 +393,31 @@ enforce-pre-completion.js (Stop)
 | Each domain | ~1KB |
 | Max total | 8KB hard cap |
 
-Most confident domains emitted first. If over budget, remaining domains truncated. Tested: all 5 domains at prod level = 8188 bytes (within 8192 cap).
+Most confident domains emitted first. Over-budget domains truncated. All 5 domains at prod level = ~8KB (within cap).
 
-### Detection performance
+### Performance
 
 - Single `fs.readdirSync(cwd)` — one syscall, result cached across all domain rules
 - Manifest files parsed lazily — only if they exist
 - Never recursive — top-level directory only
-- O(n) on directory entries × O(m) domain rules (m=5, effectively constant)
+- O(n) on directory entries x O(m) domain rules (m=5, effectively constant)
+- < 10ms on typical projects
 
 ---
 
 ## Testing
 
 ```bash
-node tests/test-config.js    # 8 tests — config resolution
-node tests/test-detect.js    # 13 tests — domain detection + dep parsing
-node tests/test-rules.js     # 18 tests — rule assembly + level filtering + budget
+# Run individual test suites
+node tests/test-config.js    #  8 tests - config resolution
+node tests/test-detect.js    # 13 tests - domain detection + dep parsing
+node tests/test-rules.js     # 18 tests - rule assembly + level filtering + budget
 
-# Run all
+# Run all 39 tests
 node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js
 ```
 
-All 39 tests pass. Tests create temporary project directories with mock dependencies to verify detection accuracy.
+Tests create temporary project directories with mock dependencies to verify detection accuracy. All 39 tests pass on Node.js 18+.
 
 ---
 
@@ -419,20 +432,32 @@ All 39 tests pass. Tests create temporary project directories with mock dependen
 | Context cost | ~1KB | 2-8KB (scales with domains) |
 | Coexists | - | Yes (different flag files) |
 
-Both can run simultaneously. Caveman compresses how Claude talks; enforce-mode controls what Claude checks.
+Both can run simultaneously. Caveman compresses *how* Claude talks; enforce-mode controls *what* Claude checks.
 
 ---
 
 ## Inspired By
 
 - **[caveman](https://github.com/JuliusBrussee/caveman)** — Claude Code communication mode plugin (activation pattern, hook architecture)
-- **[ECC project-detect.js](https://github.com/affaan-m/everything-claude-code)** — production project type detection algorithm (marker files, dep parsing)
+- **[Everything Claude Code](https://github.com/affaan-m/everything-claude-code)** — production project type detection (marker files, dep parsing)
 - **GitHub Linguist** — weighted signal classification for repository languages
 - **ESLint flat config** — explicit ordered rule resolution
 - **SonarQube quality gates** — graduated severity enforcement
 
 ---
 
+## Contributing
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/my-domain`)
+3. Add detection rules in `hooks/enforce-detect.js`
+4. Add domain rules in `rules/domains/my-domain.md`
+5. Write tests in `tests/`
+6. Run all tests: `node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js`
+7. Submit a PR
+
+---
+
 ## License
 
-MIT
+[MIT](LICENSE)
