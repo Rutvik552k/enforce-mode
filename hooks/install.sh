@@ -94,76 +94,61 @@ if [ "$IS_WINDOWS" = true ]; then
 fi
 
 # Use Node.js to merge hook entries into settings.json
+# Format: each event has array of {matcher, hooks: [{type, command, timeout}]}
 node -e "
 const fs = require('fs');
 const settings = JSON.parse(fs.readFileSync('$NODE_SETTINGS_FILE', 'utf8'));
 
 if (!settings.hooks) settings.hooks = {};
 
-// SessionStart hook
+// Helper: check if a hook command already exists in an event's entries
+function hookExists(entries, needle) {
+  return (entries || []).some(entry =>
+    (entry.hooks || []).some(h => h.command && h.command.includes(needle))
+  );
+}
+
+// SessionStart
 if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
-const ssHooks = settings.hooks.SessionStart;
-const ssExists = ssHooks.some(h =>
-  h.command && h.command.includes('enforce-activate')
-);
-if (!ssExists) {
-  ssHooks.push({
-    command: 'node $NODE_HOOKS_DIR/enforce-activate.js',
-    timeout: 10000
+if (!hookExists(settings.hooks.SessionStart, 'enforce-activate')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-activate.js', timeout: 10000 }]
   });
 }
 
-// UserPromptSubmit hook
+// UserPromptSubmit
 if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
-const upsHooks = settings.hooks.UserPromptSubmit;
-const upsExists = upsHooks.some(h =>
-  h.command && h.command.includes('enforce-mode-tracker')
-);
-if (!upsExists) {
-  upsHooks.push({
-    command: 'node $NODE_HOOKS_DIR/enforce-mode-tracker.js',
-    timeout: 5000
+if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-mode-tracker')) {
+  settings.hooks.UserPromptSubmit.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-mode-tracker.js', timeout: 5000 }]
   });
 }
 
-// PreToolUse hooks — consolidated enforcement guards
+// PreToolUse — write guard
 if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
-const ptuHooks = settings.hooks.PreToolUse;
-
-// Write guard: secrets + research + security (replaces research-gate)
-const wgExists = ptuHooks.some(h =>
-  h.command && h.command.includes('enforce-write-guard')
-);
-if (!wgExists) {
-  ptuHooks.push({
+if (!hookExists(settings.hooks.PreToolUse, 'enforce-write-guard')) {
+  settings.hooks.PreToolUse.push({
     matcher: 'Write|Edit|NotebookEdit',
-    command: 'node $NODE_HOOKS_DIR/enforce-write-guard.js',
-    timeout: 5000
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-write-guard.js', timeout: 5000 }]
   });
 }
 
-// Bash guard: git + tests + inference-bg + cost (replaces test-gate)
-const bgExists = ptuHooks.some(h =>
-  h.command && h.command.includes('enforce-bash-guard')
-);
-if (!bgExists) {
-  ptuHooks.push({
+// PreToolUse — bash guard
+if (!hookExists(settings.hooks.PreToolUse, 'enforce-bash-guard')) {
+  settings.hooks.PreToolUse.push({
     matcher: 'Bash',
-    command: 'node $NODE_HOOKS_DIR/enforce-bash-guard.js',
-    timeout: 5000
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-bash-guard.js', timeout: 5000 }]
   });
 }
 
-// Stop guard: completion checks + session log + requirements (replaces pre-completion)
+// Stop — stop guard
 if (!settings.hooks.Stop) settings.hooks.Stop = [];
-const stopHooks = settings.hooks.Stop;
-const sgExists = stopHooks.some(h =>
-  h.command && h.command.includes('enforce-stop-guard')
-);
-if (!sgExists) {
-  stopHooks.push({
-    command: 'node $NODE_HOOKS_DIR/enforce-stop-guard.js',
-    timeout: 5000
+if (!hookExists(settings.hooks.Stop, 'enforce-stop-guard')) {
+  settings.hooks.Stop.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-stop-guard.js', timeout: 5000 }]
   });
 }
 

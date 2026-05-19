@@ -83,51 +83,47 @@ const settings = JSON.parse(fs.readFileSync('$SettingsFileFwd', 'utf8'));
 
 if (!settings.hooks) settings.hooks = {};
 
+function hookExists(entries, needle) {
+  return (entries || []).some(entry =>
+    (entry.hooks || []).some(h => h.command && h.command.includes(needle))
+  );
+}
+
 if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
-const ssHooks = settings.hooks.SessionStart;
-if (!ssHooks.some(h => h.command && h.command.includes('enforce-activate'))) {
-  ssHooks.push({
-    command: 'node $HooksDirFwd/enforce-activate.js',
-    timeout: 10000
+if (!hookExists(settings.hooks.SessionStart, 'enforce-activate')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-activate.js', timeout: 10000 }]
   });
 }
 
 if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
-const upsHooks = settings.hooks.UserPromptSubmit;
-if (!upsHooks.some(h => h.command && h.command.includes('enforce-mode-tracker'))) {
-  upsHooks.push({
-    command: 'node $HooksDirFwd/enforce-mode-tracker.js',
-    timeout: 5000
+if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-mode-tracker')) {
+  settings.hooks.UserPromptSubmit.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-mode-tracker.js', timeout: 5000 }]
   });
 }
 
-// PreToolUse — consolidated enforcement guards
 if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
-const ptuHooks = settings.hooks.PreToolUse;
-
-if (!ptuHooks.some(h => h.command && h.command.includes('enforce-write-guard'))) {
-  ptuHooks.push({
+if (!hookExists(settings.hooks.PreToolUse, 'enforce-write-guard')) {
+  settings.hooks.PreToolUse.push({
     matcher: 'Write|Edit|NotebookEdit',
-    command: 'node $HooksDirFwd/enforce-write-guard.js',
-    timeout: 5000
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-write-guard.js', timeout: 5000 }]
   });
 }
-
-if (!ptuHooks.some(h => h.command && h.command.includes('enforce-bash-guard'))) {
-  ptuHooks.push({
+if (!hookExists(settings.hooks.PreToolUse, 'enforce-bash-guard')) {
+  settings.hooks.PreToolUse.push({
     matcher: 'Bash',
-    command: 'node $HooksDirFwd/enforce-bash-guard.js',
-    timeout: 5000
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-bash-guard.js', timeout: 5000 }]
   });
 }
 
-// Stop — consolidated completion guard
 if (!settings.hooks.Stop) settings.hooks.Stop = [];
-const stopHooks = settings.hooks.Stop;
-if (!stopHooks.some(h => h.command && h.command.includes('enforce-stop-guard'))) {
-  stopHooks.push({
-    command: 'node $HooksDirFwd/enforce-stop-guard.js',
-    timeout: 5000
+if (!hookExists(settings.hooks.Stop, 'enforce-stop-guard')) {
+  settings.hooks.Stop.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-stop-guard.js', timeout: 5000 }]
   });
 }
 
