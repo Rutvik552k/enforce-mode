@@ -1,0 +1,35 @@
+{
+  "name": "enforce-mode",
+  "description": "Always-on universal engineering rules + project-aware domain rules with weighted signal scoring. Detects ML inference, GPU hardware, video pipeline, API security, and cost tracking domains automatically.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Rutvik552k",
+    "url": "https://github.com/Rutvik552k"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-activate.js",
+            "timeout": 10,
+            "statusMessage": "Loading enforce-mode..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-mode-tracker.js",
+            "timeout": 5,
+            "statusMessage": "Tracking enforce-mode..."
+          }
+        ]
+      }
+    ]
+  }
+}

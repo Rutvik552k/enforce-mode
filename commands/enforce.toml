@@ -1,0 +1,2 @@
+description = "Switch enforcement level (solo/team/prod/off)"
+prompt = "Switch to enforce {{args}} mode. If no level specified, use solo. Confirm active level and list detected project domains with their confidence scores. Apply the appropriate rules for the selected level immediately."
