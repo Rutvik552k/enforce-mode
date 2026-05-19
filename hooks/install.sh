@@ -1,5 +1,5 @@
 #!/bin/bash
-# enforce-mode — standalone installer for Unix/macOS
+# enforce-mode — standalone installer for Unix/macOS/Windows (Git Bash/MSYS2)
 #
 # Copies hook files to ~/.claude/hooks/ and wires them into settings.json.
 # Idempotent — safe to run multiple times. Use --force to reinstall.
@@ -15,6 +15,12 @@ SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 
 FORCE=false
 [ "$1" = "--force" ] && FORCE=true
+
+# Detect Windows (Git Bash / MSYS2 / Cygwin)
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+  IS_WINDOWS=true
+fi
 
 # Check Node.js (required for JSON manipulation)
 if ! command -v node &>/dev/null; then
@@ -40,7 +46,8 @@ cp "$SCRIPT_DIR/enforce-rules.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-activate.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-mode-tracker.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-statusline.sh" "$HOOKS_DIR/"
-chmod +x "$HOOKS_DIR/enforce-statusline.sh"
+cp "$SCRIPT_DIR/enforce-statusline.ps1" "$HOOKS_DIR/"
+chmod +x "$HOOKS_DIR/enforce-statusline.sh" 2>/dev/null || true
 
 # Copy rules directory
 mkdir -p "$CLAUDE_DIR/rules/domains"
@@ -59,10 +66,28 @@ fi
 # Backup settings.json
 cp "$SETTINGS_FILE" "$SETTINGS_FILE.bak"
 
+# Convert paths to Windows-native for Node.js on MSYS2/Git Bash/Cygwin
+# Node.js on Windows cannot read MSYS paths like /c/Users/...
+NODE_HOOKS_DIR="$HOOKS_DIR"
+NODE_SETTINGS_FILE="$SETTINGS_FILE"
+STATUSLINE_CMD="bash $HOOKS_DIR/enforce-statusline.sh"
+
+if [ "$IS_WINDOWS" = true ]; then
+  if command -v cygpath &>/dev/null; then
+    NODE_HOOKS_DIR="$(cygpath -m "$HOOKS_DIR")"
+    NODE_SETTINGS_FILE="$(cygpath -m "$SETTINGS_FILE")"
+  else
+    # Fallback: manually convert /c/Users/... to C:/Users/...
+    NODE_HOOKS_DIR="$(echo "$HOOKS_DIR" | sed -E 's|^/([a-zA-Z])/|\U\1:/|')"
+    NODE_SETTINGS_FILE="$(echo "$SETTINGS_FILE" | sed -E 's|^/([a-zA-Z])/|\U\1:/|')"
+  fi
+  STATUSLINE_CMD="powershell -ExecutionPolicy Bypass -File \\\"${NODE_HOOKS_DIR}/enforce-statusline.ps1\\\""
+fi
+
 # Use Node.js to merge hook entries into settings.json
 node -e "
 const fs = require('fs');
-const settings = JSON.parse(fs.readFileSync('$SETTINGS_FILE', 'utf8'));
+const settings = JSON.parse(fs.readFileSync('$NODE_SETTINGS_FILE', 'utf8'));
 
 if (!settings.hooks) settings.hooks = {};
 
@@ -74,7 +99,7 @@ const ssExists = ssHooks.some(h =>
 );
 if (!ssExists) {
   ssHooks.push({
-    command: 'node $HOOKS_DIR/enforce-activate.js',
+    command: 'node $NODE_HOOKS_DIR/enforce-activate.js',
     timeout: 10000
   });
 }
@@ -87,7 +112,7 @@ const upsExists = upsHooks.some(h =>
 );
 if (!upsExists) {
   upsHooks.push({
-    command: 'node $HOOKS_DIR/enforce-mode-tracker.js',
+    command: 'node $NODE_HOOKS_DIR/enforce-mode-tracker.js',
     timeout: 5000
   });
 }
@@ -96,11 +121,11 @@ if (!upsExists) {
 if (!settings.statusLine) {
   settings.statusLine = {
     type: 'command',
-    command: 'bash $HOOKS_DIR/enforce-statusline.sh'
+    command: '$STATUSLINE_CMD'
   };
 }
 
-fs.writeFileSync('$SETTINGS_FILE', JSON.stringify(settings, null, 2));
+fs.writeFileSync('$NODE_SETTINGS_FILE', JSON.stringify(settings, null, 2));
 "
 
 echo "enforce-mode installed successfully!"
