@@ -39,7 +39,10 @@ $hookFiles = @(
     'enforce-activate.js',
     'enforce-mode-tracker.js',
     'enforce-statusline.ps1',
-    'enforce-statusline.sh'
+    'enforce-statusline.sh',
+    'enforce-research-gate.js',
+    'enforce-test-gate.js',
+    'enforce-pre-completion.js'
 )
 foreach ($file in $hookFiles) {
     Copy-Item (Join-Path $ScriptDir $file) -Destination $HooksDir -Force
@@ -91,6 +94,36 @@ const upsHooks = settings.hooks.UserPromptSubmit;
 if (!upsHooks.some(h => h.command && h.command.includes('enforce-mode-tracker'))) {
   upsHooks.push({
     command: 'node $HooksDirFwd/enforce-mode-tracker.js',
+    timeout: 5000
+  });
+}
+
+// PreToolUse hooks (enforcement gates)
+if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
+const ptuHooks = settings.hooks.PreToolUse;
+
+if (!ptuHooks.some(h => h.command && h.command.includes('enforce-research-gate'))) {
+  ptuHooks.push({
+    matcher: 'Write|Edit|NotebookEdit',
+    command: 'node $HooksDirFwd/enforce-research-gate.js',
+    timeout: 5000
+  });
+}
+
+if (!ptuHooks.some(h => h.command && h.command.includes('enforce-test-gate'))) {
+  ptuHooks.push({
+    matcher: 'Bash',
+    command: 'node $HooksDirFwd/enforce-test-gate.js',
+    timeout: 5000
+  });
+}
+
+// Stop hook (pre-completion analysis)
+if (!settings.hooks.Stop) settings.hooks.Stop = [];
+const stopHooks = settings.hooks.Stop;
+if (!stopHooks.some(h => h.command && h.command.includes('enforce-pre-completion'))) {
+  stopHooks.push({
+    command: 'node $HooksDirFwd/enforce-pre-completion.js',
     timeout: 5000
   });
 }

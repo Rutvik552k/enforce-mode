@@ -123,7 +123,7 @@ powershell -ExecutionPolicy Bypass -File hooks\install.ps1
 
 Both installers:
 - Copy hooks to `~/.claude/hooks/`
-- Wire SessionStart + UserPromptSubmit into `~/.claude/settings.json`
+- Wire SessionStart + UserPromptSubmit + PreToolUse + Stop into `~/.claude/settings.json`
 - Configure statusline badge
 - Are idempotent (safe to re-run)
 - Create backup of settings.json before modification
@@ -178,6 +178,29 @@ ENFORCE MODE ACTIVE — level: team | domains: ml-inference, api-security
 ## Persistence
 ALWAYS ACTIVE. Every response...
 ```
+
+---
+
+## Enforcement Hooks (Hard Gates)
+
+Beyond text rules injected at session start, enforce-mode includes **3 runtime hooks** that actively gate Claude's behavior by intercepting tool calls:
+
+| Hook | Event | Rule Enforced | Behavior |
+|------|-------|---------------|----------|
+| `enforce-research-gate.js` | PreToolUse (Write/Edit/NotebookEdit) | #1 Research before code, #6 Web-research mandate | **Soft gate** — injects warning when writing code with external library imports but no WebSearch/WebFetch/context7 detected in session transcript |
+| `enforce-test-gate.js` | PreToolUse (Bash) | #2 Git discipline, #3 Test before ship | **Hard block (exit 2)** — prevents `git commit`/`git push` if no test execution found in session transcript |
+| `enforce-pre-completion.js` | Stop | #3 Test before ship, #4 Pre-completion analysis | **Soft gate** — warns when code was written but no tests were run before response completion |
+
+### How they work
+
+- Each hook reads the session **transcript** (JSONL file) to check what tools were used
+- `enforce-research-gate.js` scans for WebSearch, WebFetch, or Context7 MCP tool usage before allowing code writes with external imports
+- `enforce-test-gate.js` scans for test commands (`cargo test`, `pytest`, `npm test`, etc.) and **blocks git operations** with exit code 2 if none found
+- `enforce-pre-completion.js` checks if tests were run **after** the last code write, catching stale test results
+
+### Why both text rules AND hooks?
+
+Text rules alone are advisory — Claude can ignore them under task pressure. Hooks are **mechanical enforcement**: the test-gate physically blocks `git commit` regardless of what Claude "decides" to do. Think of text rules as guidelines and hooks as guardrails.
 
 ---
 
@@ -262,6 +285,9 @@ enforce-mode/
 │   ├── enforce-config.js        # Config resolver (env > file > default)
 │   ├── enforce-detect.js        # Weighted signal scoring for domain detection
 │   ├── enforce-rules.js         # Rule registry + context budget manager
+│   ├── enforce-research-gate.js  # PreToolUse — warn on unresearched code writes
+│   ├── enforce-test-gate.js     # PreToolUse — block git commit/push without tests
+│   ├── enforce-pre-completion.js # Stop — warn if code written but untested
 │   ├── enforce-statusline.sh    # Unix statusline badge
 │   ├── enforce-statusline.ps1   # Windows statusline badge
 │   ├── install.sh               # Standalone Unix installer
@@ -299,6 +325,15 @@ enforce-activate.js (entry point)
 
 enforce-mode-tracker.js (UserPromptSubmit)
   └── enforce-config.js    → getDefaultLevel()
+
+enforce-research-gate.js (PreToolUse: Write|Edit|NotebookEdit)
+  └── reads transcript_path → checks for WebSearch/WebFetch/context7 usage
+
+enforce-test-gate.js (PreToolUse: Bash)
+  └── reads transcript_path → checks for test/build command execution
+
+enforce-pre-completion.js (Stop)
+  └── reads transcript_path → checks write-then-test ordering
 ```
 
 ### Context budget

@@ -47,7 +47,13 @@ cp "$SCRIPT_DIR/enforce-activate.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-mode-tracker.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-statusline.sh" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-statusline.ps1" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-research-gate.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-test-gate.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-pre-completion.js" "$HOOKS_DIR/"
 chmod +x "$HOOKS_DIR/enforce-statusline.sh" 2>/dev/null || true
+chmod +x "$HOOKS_DIR/enforce-research-gate.js" 2>/dev/null || true
+chmod +x "$HOOKS_DIR/enforce-test-gate.js" 2>/dev/null || true
+chmod +x "$HOOKS_DIR/enforce-pre-completion.js" 2>/dev/null || true
 
 # Copy rules directory
 mkdir -p "$CLAUDE_DIR/rules/domains"
@@ -113,6 +119,47 @@ const upsExists = upsHooks.some(h =>
 if (!upsExists) {
   upsHooks.push({
     command: 'node $NODE_HOOKS_DIR/enforce-mode-tracker.js',
+    timeout: 5000
+  });
+}
+
+// PreToolUse hooks (enforcement gates)
+if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
+const ptuHooks = settings.hooks.PreToolUse;
+
+// Research gate: warn when writing code with imports but no web research
+const rgExists = ptuHooks.some(h =>
+  h.command && h.command.includes('enforce-research-gate')
+);
+if (!rgExists) {
+  ptuHooks.push({
+    matcher: 'Write|Edit|NotebookEdit',
+    command: 'node $NODE_HOOKS_DIR/enforce-research-gate.js',
+    timeout: 5000
+  });
+}
+
+// Test gate: block git commit/push without prior test execution
+const tgExists = ptuHooks.some(h =>
+  h.command && h.command.includes('enforce-test-gate')
+);
+if (!tgExists) {
+  ptuHooks.push({
+    matcher: 'Bash',
+    command: 'node $NODE_HOOKS_DIR/enforce-test-gate.js',
+    timeout: 5000
+  });
+}
+
+// Stop hook (pre-completion analysis)
+if (!settings.hooks.Stop) settings.hooks.Stop = [];
+const stopHooks = settings.hooks.Stop;
+const pcExists = stopHooks.some(h =>
+  h.command && h.command.includes('enforce-pre-completion')
+);
+if (!pcExists) {
+  stopHooks.push({
+    command: 'node $NODE_HOOKS_DIR/enforce-pre-completion.js',
     timeout: 5000
   });
 }
