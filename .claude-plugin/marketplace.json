@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "enforce-mode",
+  "description": "Always-on universal engineering rules + project-aware domain rules with weighted signal scoring.",
+  "owner": {
+    "name": "Rutvik552k",
+    "url": "https://github.com/Rutvik552k"
+  },
+  "plugins": [
+    {
+      "name": "enforce-mode",
+      "description": "Universal rules + domain-aware enforcement for ML, GPU, video, API security, and cost tracking projects.",
+      "source": "./",
+      "category": "workflow"
+    }
+  ]
+}
