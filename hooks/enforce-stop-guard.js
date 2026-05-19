@@ -227,13 +227,10 @@ async function main() {
 
   if (warnings.length > 0) {
     const output = {
-      hookSpecificOutput: {
-        hookEventName: 'Stop',
-        additionalContext:
-          '[ENFORCE STOP GUARD] Pre-completion checks:\n\n' +
-          warnings.join('\n') +
-          '\n\nAddress these before marking work as complete.',
-      },
+      stopReason:
+        '[ENFORCE STOP GUARD] Pre-completion checks:\n\n' +
+        warnings.join('\n') +
+        '\n\nAddress these before marking work as complete.',
     };
     process.stdout.write(JSON.stringify(output));
   }
