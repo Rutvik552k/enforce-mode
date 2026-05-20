@@ -1,7 +1,7 @@
 # enforce-mode
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests: 39 passing](https://img.shields.io/badge/Tests-39%20passing-brightgreen.svg)](#testing)
+[![Tests: 50 passing](https://img.shields.io/badge/Tests-50%20passing-brightgreen.svg)](#testing)
 [![Node.js](https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg)](#architecture)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#installation)
 
@@ -26,6 +26,7 @@ enforce-mode injects engineering best practices into every Claude Code session. 
 - [Adding Custom Domains](#adding-custom-domains)
 - [Architecture](#architecture)
 - [Testing](#testing)
+- [Token Compression](#token-compression)
 - [Comparison with Caveman Mode](#comparison-with-caveman-mode)
 - [Inspired By](#inspired-by)
 - [Contributing](#contributing)
@@ -324,6 +325,7 @@ enforce-mode/
 |   +-- enforce-config.js        # Config resolver (env > file > default)
 |   +-- enforce-detect.js        # Weighted signal scoring for domain detection
 |   +-- enforce-rules.js         # Rule registry + context budget manager
+|   +-- enforce-compress.js      # Deterministic text compression for rules
 |   +-- enforce-write-guard.js   # PreToolUse - secrets + research + security (v2)
 |   +-- enforce-bash-guard.js    # PreToolUse - git + tests + inference-bg + cost (v2)
 |   +-- enforce-stop-guard.js    # Stop - tests + research + session log + requirements (v2)
@@ -355,6 +357,7 @@ enforce-mode/
 |   +-- test-config.js           #  8 tests - config resolution
 |   +-- test-detect.js           # 13 tests - domain detection + dep parsing
 |   +-- test-rules.js            # 18 tests - rule assembly + level filtering + budget
+|   +-- test-compress.js         # 11 tests - text compression + code preservation
 |
 +-- .gitignore
 +-- CLAUDE.md                    # Project instructions for Claude Code
@@ -370,6 +373,7 @@ enforce-activate.js (SessionStart entry point)
   +-- enforce-detect.js    -> detectDomains(cwd)
   |   +-- parsers: getPythonDeps, getPackageJsonDeps, getGoDeps, getRustDeps, getComposerDeps
   +-- enforce-rules.js     -> buildContext(level, domains, pluginRoot)
+      +-- enforce-compress.js -> compressRules(text)
       +-- reads rules/domains/*.md at runtime
 
 enforce-mode-tracker.js (UserPromptSubmit)
@@ -389,11 +393,12 @@ enforce-stop-guard.js (Stop)
 
 | Component | Budget |
 |-----------|--------|
-| Universal rules | ~2KB |
-| Each domain | ~1KB |
+| Universal rules (pre-compressed) | ~1.7KB |
+| Each domain (runtime-compressed) | ~0.7KB |
+| Response efficiency directive | ~0.3KB |
 | Max total | 8KB hard cap |
 
-Most confident domains emitted first. Over-budget domains truncated. All 5 domains at prod level = ~8KB (within cap).
+Most confident domains emitted first. Over-budget domains truncated. Token compression reduces total context by ~25% vs uncompressed. All 5 domains at prod level = ~8KB (within cap).
 
 ### Performance
 
@@ -412,12 +417,66 @@ Most confident domains emitted first. Over-budget domains truncated. All 5 domai
 node tests/test-config.js    #  8 tests - config resolution
 node tests/test-detect.js    # 13 tests - domain detection + dep parsing
 node tests/test-rules.js     # 18 tests - rule assembly + level filtering + budget
+node tests/test-compress.js  # 11 tests - text compression + code preservation
 
-# Run all 39 tests
-node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js
+# Run all 50 tests
+node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js
 ```
 
-Tests create temporary project directories with mock dependencies to verify detection accuracy. All 39 tests pass on Node.js 18+.
+Tests create temporary project directories with mock dependencies to verify detection accuracy. All 50 tests pass on Node.js 18+.
+
+---
+
+## Token Compression
+
+enforce-mode includes a caveman-inspired token compression system that reduces context cost without losing enforcement capability.
+
+### How It Works
+
+Three layers of compression:
+
+| Layer | What | How | Savings |
+|-------|------|-----|---------|
+| **Pre-compressed universal rules** | 11 rules in `enforce-rules.js` | Manually compressed at authoring time — zero runtime cost | ~23% |
+| **Runtime domain compression** | Domain rule files (`rules/domains/*.md`) | `enforce-compress.js` applies deterministic regex compression after severity filtering | ~25-35% |
+| **Response efficiency directive** | Output tokens per response | Injects concise-response instruction into every session context | Compound savings across session |
+
+### enforce-compress.js
+
+Deterministic regex-based text compressor. Pure Node.js stdlib, <1ms runtime. No LLM calls.
+
+**Strips:**
+- Articles: a, an, the (preserved before all-caps acronyms)
+- Filler: just, really, basically, actually, simply, essentially
+- Verbose phrases: "in order to" → "to", "make sure to" → "ensure", "prior to" → "before"
+
+**Preserves exactly:**
+- Severity tags: `[WARN]`, `[STRICT]`, `[CRITICAL]`
+- Code blocks (fenced and inline backticks)
+- URLs, file paths, technical terms
+- All-caps labels (BACKGROUND INFERENCE, AUTH REQUIRED, etc.)
+
+### Response Efficiency Directive
+
+Lighter than caveman — doesn't drop articles or use fragments in responses. Instructs Claude to:
+- Lead with answer/action, not reasoning
+- Drop filler words from responses
+- Skip restating the user's question
+- Keep technical terms exact, code unchanged
+
+This costs ~212 chars of input but saves output tokens on **every response** for the entire session.
+
+### Measured Savings
+
+```
+Component                       | Before | After  | Saved
+--------------------------------|--------|--------|------
+Universal rules (all 11)        | 2,261  | 1,735  | 23%
+Domain rules (runtime)          | raw    | ~25-35% smaller
+Solo context (no domains)       |        | 1,889 chars
+Solo + 1 domain                 |        | 2,532 chars
+Prod + all 5 domains            |        | 7,964 chars (within 8KB cap)
+```
 
 ---
 
