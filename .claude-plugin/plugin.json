@@ -1,7 +1,7 @@
 {
   "name": "enforce-mode",
   "description": "Always-on universal engineering rules + project-aware domain rules with weighted signal scoring. Detects ML inference, GPU hardware, video pipeline, API security, and cost tracking domains automatically.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": {
     "name": "Rutvik552k",
     "url": "https://github.com/Rutvik552k"
