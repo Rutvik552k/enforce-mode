@@ -162,6 +162,33 @@ try {
       changed = true;
     }
 
+    // Remove enforce hook entries from settings.hooks
+    if (settings.hooks) {
+      let hooksRemoved = 0;
+      for (const event of Object.keys(settings.hooks)) {
+        const entries = settings.hooks[event];
+        if (!Array.isArray(entries)) continue;
+        const before = entries.length;
+        settings.hooks[event] = entries.filter(entry => {
+          const hooks = entry.hooks || [];
+          return !hooks.some(h => h.command && h.command.includes('enforce-'));
+        });
+        hooksRemoved += before - settings.hooks[event].length;
+        // Remove empty event arrays
+        if (settings.hooks[event].length === 0) {
+          delete settings.hooks[event];
+        }
+      }
+      // Remove empty hooks object
+      if (Object.keys(settings.hooks).length === 0) {
+        delete settings.hooks;
+      }
+      if (hooksRemoved > 0) {
+        removed.push(`${hooksRemoved} hook entries from settings.json`);
+        changed = true;
+      }
+    }
+
     // Handle statusline
     if (settings.statusLine && settings.statusLine.command) {
       const cmd = settings.statusLine.command;
