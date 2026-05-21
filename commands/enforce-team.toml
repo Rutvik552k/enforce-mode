@@ -1,0 +1,9 @@
+description = "Switch to enforce team mode (WARN + STRICT rules)"
+prompt = """Switch to enforce team mode now.
+
+Run this command to persist:
+```
+node -e "const {setDefaultLevel} = require('${CLAUDE_PLUGIN_ROOT}/hooks/enforce-config'); console.log(setDefaultLevel('team'))"
+```
+
+Confirm switch. Apply team-level rules (WARN + STRICT) immediately."""

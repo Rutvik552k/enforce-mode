@@ -1,0 +1,9 @@
+description = "Turn off enforce mode"
+prompt = """Turn off enforce mode now.
+
+Run this command to persist and clean up:
+```
+node -e "const {setDefaultLevel} = require('${CLAUDE_PLUGIN_ROOT}/hooks/enforce-config'); console.log(setDefaultLevel('off'))"
+```
+
+Confirm enforce mode is off."""

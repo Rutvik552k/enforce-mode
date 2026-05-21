@@ -1,0 +1,9 @@
+description = "Switch to enforce solo mode (WARN rules only)"
+prompt = """Switch to enforce solo mode now.
+
+Run this command to persist:
+```
+node -e "const {setDefaultLevel} = require('${CLAUDE_PLUGIN_ROOT}/hooks/enforce-config'); console.log(setDefaultLevel('solo'))"
+```
+
+Confirm switch. Apply solo-level rules (WARN only) immediately."""

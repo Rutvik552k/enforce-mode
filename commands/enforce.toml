@@ -1,5 +1,12 @@
-description = "Switch enforcement level (solo/team/prod/off) — persists across sessions"
-prompt = """Switch to enforce {{args}} mode. If no level specified, use solo.
+description = "Switch enforcement level (solo/team/prod/off) or uninstall — persists across sessions"
+prompt = """
+If the argument is "uninstall", run the cleanup script:
+```
+node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-uninstall.js
+```
+Then confirm what was removed. Do NOT proceed with level switching.
+
+Otherwise, switch to enforce {{args}} mode. If no level specified, use solo.
 
 IMPORTANT: Persist the level change by running this command:
 ```

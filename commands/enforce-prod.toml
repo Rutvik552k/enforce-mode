@@ -1,0 +1,9 @@
+description = "Switch to enforce prod mode (all rules: WARN + STRICT + CRITICAL)"
+prompt = """Switch to enforce prod mode now.
+
+Run this command to persist:
+```
+node -e "const {setDefaultLevel} = require('${CLAUDE_PLUGIN_ROOT}/hooks/enforce-config'); console.log(setDefaultLevel('prod'))"
+```
+
+Confirm switch. Apply prod-level rules (WARN + STRICT + CRITICAL) immediately."""
