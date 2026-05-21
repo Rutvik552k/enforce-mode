@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tests: 50 passing](https://img.shields.io/badge/Tests-50%20passing-brightgreen.svg)](#testing)
+[![Architecture: Two-Phase](https://img.shields.io/badge/Architecture-Two--Phase%20v3-blueviolet.svg)](#enforcement-hooks--two-phase-architecture-v3)
 [![Node.js](https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg)](#architecture)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#installation)
 
@@ -147,41 +148,103 @@ Three graduated levels control rule strictness:
 
 ---
 
-## Enforcement Hooks (Hard Gates)
+## Enforcement Hooks — Two-Phase Architecture (v3)
 
-Beyond text rules injected at session start, enforce-mode includes **3 runtime hooks** that actively gate Claude's behavior by intercepting tool calls:
+Beyond text rules injected at session start, enforce-mode includes **5 runtime hooks** using a two-phase architecture that eliminates deadlocks while remaining unevadable:
 
-### Consolidated Guards (v2 — recommended)
+```
+Phase 1 (PreToolUse — per tool call, <10ms):
+  write-guard  → secrets: exit 2 | research: deny+retry | security: soft warn
+  dsa-guard    → complexity patterns: deny+retry | justified: pass
+  bash-guard   → git/inference/sleep gates: exit 2
 
-3 hooks, one per event type. Maximum coverage, minimum latency:
+Phase 2 (Stop — at response end, <10ms):
+  stop-guard   → reads state file, catches unresolved recommendations
+```
 
-| Hook | Event | Rules Covered | Hard Blocks |
-|------|-------|---------------|-------------|
-| `enforce-write-guard.js` | PreToolUse (Write/Edit/NotebookEdit) | #1,6 research + #9,37,38 secrets + #28-36 security | **Secrets** (exit 2) — API keys, tokens, private keys, DB URIs |
-| `enforce-bash-guard.js` | PreToolUse (Bash) | #2,7-11 git + #3,12 tests + #16-19 inference-bg + #24-27 cost | **Foreground inference** (exit 2), **git commit without tests** (exit 2), **git add .** (exit 2) |
-| `enforce-stop-guard.js` | Stop | #3,4,12-15 tests + #1,6 research + #53 session log + #55 requirements | Soft warnings (5 checks) |
+### Consolidated Guards (v3)
 
-### What gets HARD BLOCKED (exit 2, physically impossible)
+5 hooks across 3 event types. All <10ms latency:
+
+| Hook | Event | Gate Type | What It Blocks |
+|------|-------|-----------|----------------|
+| `enforce-write-guard.js` | PreToolUse (Write/Edit) | `exit 2` for secrets, `deny` for research | Hardcoded secrets, external imports without web research |
+| `enforce-dsa-guard.js` | PreToolUse (Write/Edit) | `deny` with retry guidance | O(n²) code without complexity justification |
+| `enforce-bash-guard.js` | PreToolUse (Bash) | `exit 2` | Untested commits, `git add .`, foreground inference, sleep-poll |
+| `enforce-stop-guard.js` | Stop | Soft `stopReason` | Phase 2 accountability: unresolved research/DSA recommendations |
+| `enforce-state.js` | (shared module) | — | Cross-hook state persistence via temp file |
+
+### Gate Types Explained
+
+| Gate | Mechanism | Evadable? | Latency |
+|------|-----------|-----------|---------|
+| **`exit 2`** | Hard block. Tool call physically prevented. Stderr shown to Claude. | No | <5ms |
+| **`permissionDecision: "deny"`** | Hard deny. Tool call blocked. `additionalContext` gives Claude clear retry instructions. | No | <5ms |
+| **`additionalContext`** | Soft guidance. Tool call proceeds. Claude sees the warning. | Yes | <5ms |
+| **`stopReason`** | Soft warning at response end. Claude must acknowledge. | Yes | <10ms |
+
+### What gets HARD BLOCKED (`exit 2`, physically impossible)
 
 | Action | Rule | Why |
 |--------|------|-----|
 | Writing code with hardcoded secrets (AWS keys, GitHub PATs, Stripe keys, private keys, DB URIs, JWTs) | #9, #37, #38 | Secrets in code = instant security breach |
 | `git commit` / `git push` without running tests | #2, #3, #7, #12 | Untested code in git history is irreversible |
 | `git add .` / `git add -A` | #9, #10, #11 | Catch-all staging may include secrets or binaries |
-| Running inference/GPU tasks in foreground (python inference.py, torchrun, ffmpeg video encoding) | #16-19 | Main agent must never sit idle — always background |
+| Running inference/GPU tasks in foreground | #16-19 | Main agent must never sit idle — always background |
+| Sleep-poll with `sleep ≥30s` | Anti-pattern | Use `run_in_background=true` instead |
 
-### What gets SOFT WARNED (injected reminder)
+### What gets HARD DENIED (`permissionDecision: "deny"`, unevadable, retry-guided)
+
+| Action | Rule | Retry Path |
+|--------|------|------------|
+| Writing code with external imports but no web research | #1, #6 | Do WebSearch/WebFetch/context7 first, then retry the write |
+| Writing algorithmic code without complexity justification | DSA efficiency | Add `# O(n)` comment or WebSearch for optimal approach, then retry |
+
+The `deny` + `additionalContext` pattern is different from `exit 2`:
+- Claude gets structured retry instructions (not just an error)
+- No "halt bug" (known issue with `exit 2` where Claude stops responding)
+- Clear path forward: do X, then retry the exact same write
+
+### What gets SOFT WARNED (injected context)
 
 | Check | Rule | When |
 |-------|------|------|
-| Code with imports but no web research | #1, #6 | Write/Edit with import statements, no WebSearch in transcript |
-| Security anti-patterns (eval, SQL concat, CORS *, disabled SSL) | #28-36 | Detected in code being written |
-| Cloud cost operations (AWS/GCP/Azure instance launch, model downloads) | #24-27 | Detected in bash commands |
-| Code written but no tests ran | #3, #12 | At response completion |
-| Tests ran before last code change (stale) | #3, #12 | At response completion |
-| Session log not updated | #53 | At response completion |
-| New imports but requirements not updated | #55 | At response completion |
-| Multiple files changed without pre-completion review | #4, #56-58 | At response completion (3+ files) |
+| Security anti-patterns (eval, SQL concat, CORS *, disabled SSL) | #28-36 | Code being written |
+| Sleep-poll with `sleep <30s` | Anti-pattern | Short sleep in bash command |
+| Cloud cost operations (instance launch, model downloads) | #24-27 | Detected in bash commands |
+| Build found but no test execution | #3, #12 | git commit/push with only builds |
+
+### Phase 2 Accountability (Stop hook)
+
+At response end, the stop guard reads the state file written by Phase 1 hooks and checks:
+
+| Check | What It Catches |
+|-------|-----------------|
+| Unresolved research | Files written with external imports where no WebSearch/WebFetch/context7 was performed |
+| Unresolved DSA | Files with algorithmic patterns where no complexity comment or DSA research was added |
+| Tests not run | Code was written but no test suite executed |
+| Stale tests | Tests ran before the last code change |
+| Requirements not synced | New imports added but dependency files not updated |
+| Pre-completion review | 3+ files changed without walking code paths |
+
+### Self-Exemption (deadlock prevention)
+
+Hook files and test files are exempt from research and DSA checks:
+
+- `~/.claude/hooks/*` — hook source files
+- `enforce-mode/hooks/*` — hook source files
+- `**/tests/*`, `*test-*`, `*.test.*`, `*.spec.*` — test files
+
+This prevents the self-referential deadlock where editing a hook file triggers the hook's own checks (hooks use `require('fs')` and `readFileSync` which would trigger both research and DSA gates).
+
+### Stdlib Whitelist (false positive prevention)
+
+The write-guard whitelists standard library imports that don't need web research:
+
+- **Node.js**: fs, path, os, http, https, url, util, crypto, stream, events, child_process, etc.
+- **Python**: os, sys, json, re, math, time, datetime, pathlib, collections, typing, etc.
+
+Only third-party imports (express, torch, pandas, etc.) trigger the research gate.
 
 ### Legacy Guards (v1 — still included)
 
@@ -193,11 +256,13 @@ Beyond text rules injected at session start, enforce-mode includes **3 runtime h
 
 ### How they work
 
-- Each hook reads stdin JSON (tool_name, tool_input, transcript_path)
-- **Write guard**: Scans source code with 17 secret-detection regexes (gitleaks-inspired), 9 security anti-patterns, and import detection
-- **Bash guard**: Pattern-matches commands against inference patterns, git operations, and cost triggers. Checks transcript for test execution history
-- **Stop guard**: Single O(n) transcript scan tracking write positions, test positions, research usage, session log updates, and requirements changes
-- All hooks are pure Node.js stdlib — zero npm dependencies, <10ms execution
+- Each hook reads stdin JSON (tool_name, tool_input, transcript_path, session_id)
+- **Write guard**: Scans source with 17 secret-detection regexes, checks stdlib whitelist, verifies web research in transcript. Uses `permissionDecision: "deny"` (not `exit 2`) for research gate to avoid halt bug
+- **DSA guard**: Detects 15 algorithmic patterns. Accepts complexity comments as justification. Uses `permissionDecision: "deny"` with retry guidance
+- **Bash guard**: Pattern-matches git operations, inference commands, sleep-poll, cost triggers. Checks transcript for test execution
+- **Stop guard (Phase 2)**: Reads `enforce-state.js` state file for unresolved Phase 1 recommendations. Single O(n) transcript scan for test/research/requirements checks
+- **State module**: Cross-hook persistence via `{tmpdir}/enforce-{session_id}.json`. Records pending recommendations (Phase 1) and resolution status (Phase 2)
+- All hooks pure Node.js stdlib — zero npm dependencies, <10ms execution
 
 ### Why both text rules AND hooks?
 
@@ -326,9 +391,11 @@ enforce-mode/
 |   +-- enforce-detect.js        # Weighted signal scoring for domain detection
 |   +-- enforce-rules.js         # Rule registry + context budget manager
 |   +-- enforce-compress.js      # Deterministic text compression for rules
-|   +-- enforce-write-guard.js   # PreToolUse - secrets + research + security (v2)
-|   +-- enforce-bash-guard.js    # PreToolUse - git + tests + inference-bg + cost (v2)
-|   +-- enforce-stop-guard.js    # Stop - tests + research + session log + requirements (v2)
+|   +-- enforce-state.js          # Cross-hook state persistence (Phase 1 → Phase 2) (v3)
+|   +-- enforce-write-guard.js   # PreToolUse - secrets (exit 2) + research (deny) + security (v3)
+|   +-- enforce-dsa-guard.js     # PreToolUse - DSA complexity (deny) + self-exemption (v3)
+|   +-- enforce-bash-guard.js    # PreToolUse - git + tests + inference-bg + sleep-poll + cost (v2)
+|   +-- enforce-stop-guard.js    # Stop - Phase 2 accountability + tests + requirements (v3)
 |   +-- enforce-research-gate.js # PreToolUse - research check (v1 legacy)
 |   +-- enforce-test-gate.js     # PreToolUse - test check (v1 legacy)
 |   +-- enforce-pre-completion.js # Stop - test check (v1 legacy)
@@ -379,14 +446,26 @@ enforce-activate.js (SessionStart entry point)
 enforce-mode-tracker.js (UserPromptSubmit)
   +-- enforce-config.js    -> getDefaultLevel()
 
-enforce-write-guard.js (PreToolUse: Write|Edit|NotebookEdit)
-  +-- reads transcript_path -> checks for WebSearch/WebFetch/context7 usage
+enforce-write-guard.js (Phase 1: PreToolUse Write|Edit|NotebookEdit)
+  +-- enforce-state.js     -> recordPending(sessionId, 'research', file, patterns)
+  +-- stdlib whitelist      -> skips fs/os/path/etc. (no false positives)
+  +-- self-exemption        -> skips .claude/hooks/ and test files
+  +-- secrets: exit 2       | research: permissionDecision:"deny" | security: soft
+
+enforce-dsa-guard.js (Phase 1: PreToolUse Write|Edit|NotebookEdit)
+  +-- enforce-state.js     -> recordPending(sessionId, 'dsa', file, patterns)
+  +-- self-exemption        -> skips .claude/hooks/ and test files
+  +-- accepts complexity comments as justification (immediate pass)
+  +-- unjustified: permissionDecision:"deny" with retry guidance
 
 enforce-bash-guard.js (PreToolUse: Bash)
   +-- reads transcript_path -> checks for test/build command execution
+  +-- detects sleep-poll anti-patterns (>=30s block, <30s warn)
 
-enforce-stop-guard.js (Stop)
-  +-- reads transcript_path -> checks write-then-test ordering
+enforce-stop-guard.js (Phase 2: Stop)
+  +-- enforce-state.js     -> getUnresolved(sessionId), getSummary(sessionId)
+  +-- reads transcript_path -> checks write-then-test ordering, research tools
+  +-- catches unresolved Phase 1 recommendations
 ```
 
 ### Context Budget

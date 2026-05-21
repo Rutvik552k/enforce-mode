@@ -84,6 +84,28 @@ const INFERENCE_PATTERNS = [
 ];
 
 // ═══════════════════════════════════════════════════════════
+// SLEEP / POLL DETECTION (anti-pattern: idle main agent)
+// ═══════════════════════════════════════════════════════════
+
+const SLEEP_POLL_PATTERNS = [
+  // sleep N && check something
+  /sleep\s+\d+\s*&&/,
+  // sleep N ; check something
+  /sleep\s+\d+\s*;/,
+  // sleep used as a delay before reading output
+  /sleep\s+\d+.*(?:cat|tail|head|wc|ls)/,
+];
+
+function isSleepPoll(cmd) {
+  return SLEEP_POLL_PATTERNS.some(p => p.test(cmd));
+}
+
+function getSleepDuration(cmd) {
+  const match = cmd.match(/sleep\s+(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+// ═══════════════════════════════════════════════════════════
 // COST ALERT PATTERNS
 // ═══════════════════════════════════════════════════════════
 
@@ -197,6 +219,34 @@ async function main() {
       'NEVER let the main agent sit idle during inference.'
     );
     process.exit(2);
+  }
+
+  // ── CHECK 1b: SLEEP-POLL ANTI-PATTERN (WARN or BLOCK) ──
+  if (isSleepPoll(cmd)) {
+    const duration = getSleepDuration(cmd);
+    if (duration >= 30) {
+      // Block long sleeps — agent should not idle
+      process.stderr.write(
+        '[ENFORCE BLOCK] Sleep-poll anti-pattern detected!\n' +
+        'Sleeping ' + duration + 's to poll output is wasteful.\n\n' +
+        'Detected command:\n  ' + cmd.substring(0, 200) + '\n\n' +
+        'Fix: Use run_in_background=true for the ORIGINAL command,\n' +
+        'then wait for the task notification. Do NOT sleep-and-check.\n' +
+        'Continue productive work while waiting.'
+      );
+      process.exit(2);
+    } else {
+      // Short sleeps get a warning
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext:
+            '[ENFORCE WARNING] Sleep-poll detected (sleep ' + duration + 's).\n' +
+            'Prefer waiting for background task notifications over polling.',
+        },
+      };
+      process.stdout.write(JSON.stringify(output));
+    }
   }
 
   // ── CHECK 2: GIT ADD WITH SECRETS/BINARIES (HARD BLOCK) ──

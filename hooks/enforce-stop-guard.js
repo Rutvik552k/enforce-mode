@@ -1,29 +1,33 @@
 #!/usr/bin/env node
 /**
- * enforce-stop-guard.js — Consolidated Stop hook
+ * enforce-stop-guard.js — Phase 2 Stop hook (accountability check)
  *
- * REPLACES: enforce-pre-completion.js (now covers more rules)
+ * TWO-PHASE ARCHITECTURE (Solution C):
+ *   Phase 1 (write-guard, dsa-guard): Soft guidance + record to state file
+ *   Phase 2 (this file): Read state → check compliance → strong warnings
  *
  * ENFORCES:
  *   Rule #3, #4, #12-15 — Test before ship, pre-completion analysis
- *   Rule #1, #6          — Research verification
- *   Rule #53             — Session log update reminder
+ *   Rule #1, #6          — Research verification (Phase 2 accountability)
+ *   DSA efficiency       — Complexity analysis (Phase 2 accountability)
+ *   Rule #53             — Session log update (team+ only)
  *   Rule #55             — Requirements.txt sync reminder
- *   Rule #50-52          — Decision management reminders
  *
  * GATES:
  *   All soft (Stop hooks should not hard-block or Claude can't respond)
- *   Injects additionalContext warnings that Claude must acknowledge
+ *   Injects warnings that Claude must acknowledge
  *
- * TRANSCRIPT SCANNING:
- *   Reads transcript JSONL in reverse (tail) for efficiency —
- *   recent events matter most, no need to scan from beginning.
- *   O(n) single pass, early exit when all checks satisfied.
+ * PHASE 2 LOGIC:
+ *   Reads enforce-state.js pending recommendations.
+ *   If research was recommended but never performed → strong warning.
+ *   If DSA analysis needed but no justification → strong warning.
+ *   Transcript scan still runs for test/build checks (unchanged).
  */
 
 'use strict';
 
 const fs = require('fs');
+const { getUnresolved, getSummary, recordResearch } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // DETECTION PATTERNS
@@ -55,16 +59,29 @@ const IMPORT_WRITE_PATTERNS = [
   /use\s+\w+::/,
 ];
 
-// Session log indicators
-const SESSION_LOG_WRITES = [
-  'session_log', 'session-log', 'SESSION_LOG',
-  'research_workspace', 'ARCHITECTURE.md',
-];
-
-// Requirements file indicators
 const REQUIREMENTS_WRITES = [
   'requirements.txt', 'pyproject.toml', 'package.json',
   'Cargo.toml', 'go.mod', 'Gemfile', 'composer.json',
+];
+
+// DSA complexity comments — same patterns as dsa-guard
+const COMPLEXITY_COMMENTS = [
+  /[#/]\s*O\(\s*[n1kNmlog\s^*+]+\s*\)/,
+  /\/\/\s*O\(\s*[n1kNmlog\s^*+]+\s*\)/,
+  /\/\*.*O\(\s*[n1kNmlog\s^*+]+\s*\).*\*\//,
+  /[#/].*(?:complexity|time complexity|space complexity|amortized)/i,
+  /[#/].*(?:intentionally O\(n|acceptable for small|bounded by|max size|at most)/i,
+  /[#/].*(?:benchmarked|profiled|measured|tested with)/i,
+  /[#/].*(?:small dataset|fixed size|constant bound|max \d+ items|< \d+ elements)/i,
+];
+
+const DSA_RESEARCH_TERMS = [
+  'time complexity', 'space complexity', 'big o',
+  'algorithm', 'data structure',
+  'hash map', 'hash table', 'binary search',
+  'sorting algorithm', 'memoization', 'dynamic programming',
+  'O(n)', 'O(n log n)', 'O(1)', 'O(n^2)',
+  'benchmark', 'performance', 'optimization',
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -96,10 +113,12 @@ function analyzeTranscript(transcriptPath) {
     testCount: 0,
     lastTestIndex: -1,
     hasResearch: false,
+    researchTools: [],
     hasImportWrites: false,
-    hasSessionLogUpdate: false,
     hasRequirementsUpdate: false,
     newImportsAdded: false,
+    hasDSAResearch: false,
+    hasComplexityComments: false,
   };
 
   try {
@@ -118,10 +137,14 @@ function analyzeTranscript(transcriptPath) {
           result.writeCount++;
           result.lastWriteIndex = i;
 
-          // Check if write contains imports
           if (IMPORT_WRITE_PATTERNS.some(p => p.test(line))) {
             result.hasImportWrites = true;
             result.newImportsAdded = true;
+          }
+
+          // Check for complexity comments in written code
+          if (COMPLEXITY_COMMENTS.some(p => p.test(line))) {
+            result.hasComplexityComments = true;
           }
         }
       }
@@ -135,18 +158,20 @@ function analyzeTranscript(transcriptPath) {
         }
       }
 
-      // Research
+      // Research tools
       for (const tool of RESEARCH_TOOLS) {
         if (line.includes(tool)) {
           result.hasResearch = true;
+          if (!result.researchTools.includes(tool)) {
+            result.researchTools.push(tool);
+          }
         }
       }
 
-      // Session log updates
-      for (const indicator of SESSION_LOG_WRITES) {
-        if (line.includes(indicator)) {
-          result.hasSessionLogUpdate = true;
-        }
+      // DSA-specific research
+      const lineLower = line.toLowerCase();
+      if (result.hasResearch && DSA_RESEARCH_TERMS.some(t => lineLower.includes(t))) {
+        result.hasDSAResearch = true;
       }
 
       // Requirements updates
@@ -170,8 +195,17 @@ function analyzeTranscript(transcriptPath) {
 async function main() {
   const input = await readStdin();
   const transcriptPath = input.transcript_path || '';
+  const sessionId = input.session_id || '';
 
   const analysis = analyzeTranscript(transcriptPath);
+
+  // Update state with research findings from transcript
+  // so Phase 2 unresolved check is accurate
+  if (sessionId && analysis.researchTools.length > 0) {
+    for (const tool of analysis.researchTools) {
+      recordResearch(sessionId, tool);
+    }
+  }
 
   // No code written — nothing to enforce
   if (!analysis.hasCodeWrites) {
@@ -193,19 +227,44 @@ async function main() {
     );
   }
 
-  // ── CHECK 2: CODE WITH IMPORTS BUT NO RESEARCH ──
-  if (analysis.hasImportWrites && !analysis.hasResearch) {
+  // ── CHECK 2: PHASE 2 — UNRESOLVED RESEARCH RECOMMENDATIONS ──
+  if (sessionId) {
+    const unresolved = getUnresolved(sessionId);
+    const unresolvedResearch = unresolved.filter(p => p.type === 'research');
+    const unresolvedDSA = unresolved.filter(p => p.type === 'dsa');
+
+    if (unresolvedResearch.length > 0 && !analysis.hasResearch) {
+      warnings.push(
+        '[PHASE 2 — RESEARCH] ' + unresolvedResearch.length + ' file(s) were written with external imports but NO web research was performed this session.',
+        'Files: ' + unresolvedResearch.map(p => p.file).join(', '),
+        'Action: Verify API signatures via WebSearch/context7, or tell the user you used unverified training knowledge.'
+      );
+    }
+
+    if (unresolvedDSA.length > 0 && !analysis.hasDSAResearch && !analysis.hasComplexityComments) {
+      warnings.push(
+        '[PHASE 2 — DSA] ' + unresolvedDSA.length + ' file(s) contain algorithmic patterns without complexity justification.',
+        'Files: ' + unresolvedDSA.map(p => p.file).join(', '),
+        'Patterns: ' + unresolvedDSA.flatMap(p => p.patterns).join(', '),
+        'Action: Add complexity comments (# O(n) — reason) or research optimal data structures.'
+      );
+    }
+
+    // Summary line if any phase-2 items resolved
+    const summary = getSummary(sessionId);
+    if (summary.resolvedCount > 0 && (unresolvedResearch.length > 0 || unresolvedDSA.length > 0)) {
+      warnings.push(
+        `[PHASE 2 SUMMARY] ${summary.resolvedCount}/${summary.totalPending} recommendations resolved. ${unresolvedResearch.length} research + ${unresolvedDSA.length} DSA still pending.`
+      );
+    }
+  }
+
+  // ── CHECK 3: CODE WITH IMPORTS BUT NO RESEARCH (legacy transcript check) ──
+  // Only fires if Phase 2 state is unavailable (no session_id)
+  if (!sessionId && analysis.hasImportWrites && !analysis.hasResearch) {
     warnings.push(
       '[RULE #1, #6] Code with external imports was written but no web research detected.',
       'Verify API signatures are current or explicitly state you used unverified training knowledge.'
-    );
-  }
-
-  // ── CHECK 3: SESSION LOG NOT UPDATED ──
-  if (!analysis.hasSessionLogUpdate) {
-    warnings.push(
-      '[RULE #53] Session log was not updated this session.',
-      'Update session_log.md with: decisions made, models verified, test results, issues found.'
     );
   }
 
@@ -228,7 +287,7 @@ async function main() {
   if (warnings.length > 0) {
     const output = {
       stopReason:
-        '[ENFORCE STOP GUARD] Pre-completion checks:\n\n' +
+        '[ENFORCE STOP GUARD — Phase 2] Pre-completion checks:\n\n' +
         warnings.join('\n') +
         '\n\nAddress these before marking work as complete.',
     };

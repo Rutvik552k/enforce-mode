@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
- * enforce-write-guard.js — Consolidated PreToolUse hook for Write|Edit|NotebookEdit
+ * enforce-write-guard.js — Phase 1 PreToolUse hook for Write|Edit|NotebookEdit
  *
- * REPLACES: enforce-research-gate.js (now covers more rules)
+ * TWO-PHASE ARCHITECTURE (Solution C):
+ *   Phase 1 (this file): Detect issues → soft guidance + record to state file
+ *   Phase 2 (enforce-stop-guard.js): Check compliance at response end
  *
  * ENFORCES:
  *   Rule #1, #6  — Research before code / Web-research mandate
  *   Rule #9, #37, #38 — Never hardcode secrets/tokens/credentials
  *   Rule #28-36 — Security: auth, rate limiting, input validation, etc.
  *
- * ARCHITECTURE:
- *   Single stdin read → parallel checks → aggregated output
- *   Aho-Corasick-inspired multi-pattern matching (simple trie for <100 patterns)
- *   O(n) scan over source content, O(m) scan over transcript
- *
  * GATES:
  *   - Secrets detected → HARD BLOCK (exit 2) — secrets must never be written
- *   - No research → Soft warn (additionalContext)
- *   - Security anti-patterns → Soft warn (additionalContext)
+ *   - No research → HARD DENY (permissionDecision:"deny") + retry guidance
+ *   - Security anti-patterns → SOFT GUIDANCE (additionalContext)
+ *
+ * Zero deadlocks: deny+additionalContext gives Claude clear retry path.
+ * Stdlib imports (fs, os, path, etc.) are whitelisted — no false positives.
  */
 
 'use strict';
@@ -94,12 +94,12 @@ const RESEARCH_TOOLS = [
 ];
 
 const IMPORT_PATTERNS = [
-  /^\s*(import|from)\s+\w+/m,
-  /^\s*(import|require)\s*\(/m,
-  /^\s*import\s+.*from\s+['"]/m,
-  /^\s*use\s+\w+::/m,
-  /^\s*extern\s+crate/m,
-  /^\s*import\s+\(/m,
+  /^\s*(import|from)\s+\w+/m,       // Python: import X / from X
+  /require\s*\(\s*['"]/m,            // JS: require('X') anywhere in line
+  /^\s*import\s+.*from\s+['"]/m,    // JS/TS: import X from 'Y'
+  /^\s*use\s+\w+::/m,               // Rust: use X::
+  /^\s*extern\s+crate/m,            // Rust: extern crate
+  /^\s*import\s+\(/m,               // Go: import (
 ];
 
 const SKIP_EXTENSIONS = [
@@ -107,6 +107,59 @@ const SKIP_EXTENSIONS = [
   '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
   '.png', '.jpg', '.gif', '.svg', '.ico',
 ];
+
+// ═══════════════════════════════════════════════════════════
+// STDLIB IMPORTS — these don't need web research verification
+// ═══════════════════════════════════════════════════════════
+
+const NODE_STDLIB = [
+  'fs', 'path', 'os', 'http', 'https', 'url', 'util', 'crypto',
+  'stream', 'events', 'child_process', 'assert', 'buffer', 'net',
+  'tls', 'dns', 'cluster', 'zlib', 'readline', 'querystring',
+  'string_decoder', 'timers', 'vm', 'worker_threads', 'perf_hooks',
+  'node:fs', 'node:path', 'node:os', 'node:http', 'node:https',
+  'node:url', 'node:util', 'node:crypto', 'node:stream',
+];
+
+const PYTHON_STDLIB = [
+  'os', 'sys', 'json', 're', 'math', 'time', 'datetime',
+  'pathlib', 'collections', 'functools', 'itertools', 'typing',
+  'hashlib', 'io', 'logging', 'subprocess', 'shutil', 'tempfile',
+  'unittest', 'argparse', 'copy', 'abc', 'enum', 'dataclasses',
+  'contextlib', 'textwrap', 'struct', 'socket', 'http', 'urllib',
+];
+
+function isStdlibOnly(source) {
+  // Extract import names from source
+  const importNames = [];
+
+  // Python: import X / from X import Y
+  const pyImports = source.matchAll(/^\s*(?:import|from)\s+([a-zA-Z_][a-zA-Z0-9_.]*)/gm);
+  for (const m of pyImports) {
+    importNames.push(m[1].split('.')[0].toLowerCase());
+  }
+
+  // JS/TS: require('X') / import ... from 'X'
+  const jsRequires = source.matchAll(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/g);
+  for (const m of jsRequires) {
+    importNames.push(m[1].split('/')[0].toLowerCase());
+  }
+  const jsImports = source.matchAll(/import\s+.*from\s+['"]([^'"]+)['"]/g);
+  for (const m of jsImports) {
+    importNames.push(m[1].split('/')[0].toLowerCase());
+  }
+
+  if (importNames.length === 0) return true; // no imports found
+
+  const allStdlib = [...NODE_STDLIB, ...PYTHON_STDLIB].map(s => s.toLowerCase());
+  return importNames.every(name => allStdlib.includes(name));
+}
+
+// ═══════════════════════════════════════════════════════════
+// CROSS-HOOK STATE (Phase 1 → state file → Phase 2)
+// ═══════════════════════════════════════════════════════════
+
+const { recordPending } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // CORE FUNCTIONS
@@ -154,6 +207,24 @@ function checkResearch(transcriptPath) {
   }
 }
 
+// Paths exempt from research/DSA checks (avoids self-referential deadlock)
+const EXEMPT_PATHS = [
+  '.claude/hooks',
+  '.claude\\hooks',
+  'enforce-mode/hooks',
+  'enforce-mode\\hooks',
+  '/tests/',
+  '\\tests\\',
+  'test-',
+  '.test.',
+  '.spec.',
+];
+
+function isExemptPath(filePath) {
+  if (!filePath) return false;
+  return EXEMPT_PATHS.some(p => filePath.includes(p));
+}
+
 function isCodeFile(filePath) {
   if (!filePath) return false;
   const ext = path.extname(filePath).toLowerCase();
@@ -197,34 +268,48 @@ async function main() {
     process.exit(2);
   }
 
-  // Skip non-code files for remaining checks
+  // Skip non-code files and exempt paths (hooks, tests)
   if (!isCodeFile(filePath)) process.exit(0);
+  if (isExemptPath(filePath)) process.exit(0);
 
-  const warnings = [];
+  const sessionId = input.session_id || '';
 
-  // ── CHECK 2: RESEARCH GATE (SOFT WARN) ──
-  if (hasImports(source) && !checkResearch(transcriptPath)) {
-    warnings.push(
-      '[RULE VIOLATION #1, #6] Writing code with external imports but NO web research in session.',
-      'You MUST either web-search to verify APIs or tell the user you are using unverified training knowledge.'
-    );
+  // ── CHECK 2: RESEARCH GATE (HARD DENY + RETRY GUIDANCE) ──
+  // External imports without research → deny. Claude retries after WebSearch.
+  // <10ms, unevadable. Stdlib (fs/os/path) whitelisted.
+  if (hasImports(source) && !isStdlibOnly(source) && !checkResearch(transcriptPath)) {
+    recordPending(sessionId, 'research', filePath, ['external imports detected']);
+
+    const output = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'External library imports without web research',
+        additionalContext:
+          '[ENFORCE] Write denied — external imports need verification first.\n\n' +
+          'File: ' + filePath + '\n\n' +
+          'To unblock, do ONE of these BEFORE retrying the write:\n' +
+          '  1. WebSearch for the library docs to verify current API signatures\n' +
+          '  2. Use context7 docs lookup (mcp__plugin_ecc_context7__query-docs)\n' +
+          '  3. WebFetch the official documentation URL\n\n' +
+          'Then retry this exact write. It will pass once research is in the transcript.\n' +
+          'Note: stdlib imports (fs, os, path, json, etc.) never trigger this gate.',
+      },
+    };
+    process.stdout.write(JSON.stringify(output));
+    process.exit(0);
   }
 
   // ── CHECK 3: SECURITY SCAN (SOFT WARN) ──
   const secIssues = scanSecurity(source);
   if (secIssues.length > 0) {
-    warnings.push(
-      '[SECURITY WARNING #28-36] Potential security anti-patterns detected:',
-      ...secIssues.map(s => `  - ${s}`),
-      'Review: auth on endpoints, input validation, no SQL injection, no eval().'
-    );
-  }
-
-  if (warnings.length > 0) {
     const output = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        additionalContext: '[ENFORCE WRITE GUARD]\n' + warnings.join('\n'),
+        additionalContext:
+          '[ENFORCE SECURITY WARNING]\n' +
+          secIssues.map(s => `  - ${s}`).join('\n') + '\n' +
+          'Review: auth on endpoints, input validation, no SQL injection, no eval().',
       },
     };
     process.stdout.write(JSON.stringify(output));
