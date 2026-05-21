@@ -37,15 +37,19 @@ $hookFiles = @(
     'enforce-detect.js',
     'enforce-rules.js',
     'enforce-activate.js',
+    'enforce-state.js',
     'enforce-mode-tracker.js',
     'enforce-statusline.ps1',
     'enforce-statusline.sh',
+    'enforce-statusline-setup.js',
     'enforce-research-gate.js',
     'enforce-test-gate.js',
     'enforce-pre-completion.js',
+    'enforce-compress.js',
     'enforce-write-guard.js',
     'enforce-bash-guard.js',
-    'enforce-stop-guard.js'
+    'enforce-stop-guard.js',
+    'enforce-uninstall.js'
 )
 foreach ($file in $hookFiles) {
     Copy-Item (Join-Path $ScriptDir $file) -Destination $HooksDir -Force

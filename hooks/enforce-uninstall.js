@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 /**
- * enforce-mode — uninstall cleanup
+ * enforce-mode — full uninstall cleanup
  *
- * Removes all artifacts left behind by enforce-mode:
+ * Removes ALL artifacts left behind by enforce-mode:
  *   - ~/.claude/.enforce-active flag file
- *   - pluginSettings.enforce-mode from settings.json
- *   - Enforce badge from unified statusline scripts
+ *   - Per-session state files (enforce-sessions/)
  *   - Config file from platform config dir
- *   - Per-session state files
+ *   - pluginSettings.enforce-mode from settings.json
+ *   - enabledPlugins["enforce-mode@enforce-mode"] from settings.json
+ *   - extraKnownMarketplaces.enforce-mode from settings.json
+ *   - All enforce-* hook files from ~/.claude/hooks/
+ *   - enforce-statusline-setup.js from ~/.claude/hooks/
+ *   - Enforce rules from ~/.claude/rules/
+ *   - Enforce skills from ~/.claude/skills/enforce/
+ *   - Enforce badge from unified statusline scripts
  *
  * Safe to run multiple times (idempotent).
  * If caveman mode is also using the unified statusline, downgrades
@@ -74,7 +80,56 @@ try {
   }
 } catch (e) { errors.push(`config: ${e.message}`); }
 
-// 4. Clean settings.json — remove pluginSettings.enforce-mode + fix statusline
+// 4. Remove enforce-* hook files from ~/.claude/hooks/
+try {
+  if (fs.existsSync(hooksDir)) {
+    const hookFiles = fs.readdirSync(hooksDir).filter(f =>
+      f.startsWith('enforce-') && (f.endsWith('.js') || f.endsWith('.sh') || f.endsWith('.ps1'))
+    );
+    for (const f of hookFiles) {
+      fs.unlinkSync(path.join(hooksDir, f));
+    }
+    if (hookFiles.length > 0) {
+      removed.push(`${hookFiles.length} hook files from ~/.claude/hooks/`);
+    }
+  }
+} catch (e) { errors.push(`hook files: ${e.message}`); }
+
+// 5. Remove enforce rules from ~/.claude/rules/
+try {
+  const rulesDir = path.join(claudeDir, 'rules');
+  const domainsDir = path.join(rulesDir, 'domains');
+  // Remove domain rule files that enforce-mode installed
+  const enforceDomains = ['api-security.md', 'cost-tracking.md', 'gpu-hardware.md', 'ml-inference.md', 'video-pipeline.md'];
+  let domainCount = 0;
+  for (const d of enforceDomains) {
+    const p = path.join(domainsDir, d);
+    if (fs.existsSync(p)) { fs.unlinkSync(p); domainCount++; }
+  }
+  // Remove universal.md if it contains enforce marker
+  const universalPath = path.join(rulesDir, 'universal.md');
+  if (fs.existsSync(universalPath)) {
+    const content = fs.readFileSync(universalPath, 'utf8');
+    if (content.includes('ENFORCE MODE') || content.includes('enforce')) {
+      fs.unlinkSync(universalPath);
+      domainCount++;
+    }
+  }
+  if (domainCount > 0) removed.push(`${domainCount} rule files from ~/.claude/rules/`);
+} catch (e) { errors.push(`rules: ${e.message}`); }
+
+// 6. Remove enforce skills from ~/.claude/skills/enforce/
+try {
+  const skillDir = path.join(claudeDir, 'skills', 'enforce');
+  if (fs.existsSync(skillDir)) {
+    const files = fs.readdirSync(skillDir);
+    for (const f of files) { fs.unlinkSync(path.join(skillDir, f)); }
+    fs.rmdirSync(skillDir);
+    removed.push('skills/enforce/ directory');
+  }
+} catch (e) { errors.push(`skills: ${e.message}`); }
+
+// 7. Clean settings.json — plugin entries, marketplace, statusline
 try {
   if (fs.existsSync(settingsPath)) {
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -87,6 +142,23 @@ try {
         delete settings.pluginSettings;
       }
       removed.push('pluginSettings.enforce-mode');
+      changed = true;
+    }
+
+    // Remove from enabledPlugins
+    if (settings.enabledPlugins) {
+      const key = Object.keys(settings.enabledPlugins).find(k => k.includes('enforce-mode'));
+      if (key) {
+        delete settings.enabledPlugins[key];
+        removed.push(`enabledPlugins["${key}"]`);
+        changed = true;
+      }
+    }
+
+    // Remove from extraKnownMarketplaces
+    if (settings.extraKnownMarketplaces && settings.extraKnownMarketplaces['enforce-mode']) {
+      delete settings.extraKnownMarketplaces['enforce-mode'];
+      removed.push('extraKnownMarketplaces.enforce-mode');
       changed = true;
     }
 
