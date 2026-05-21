@@ -1,7 +1,7 @@
 # enforce-mode
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests: 50 passing](https://img.shields.io/badge/Tests-50%20passing-brightgreen.svg)](#testing)
+[![Tests: 70 passing](https://img.shields.io/badge/Tests-70%20passing-brightgreen.svg)](#testing)
 [![Node.js](https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg)](#architecture)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#installation)
 
@@ -147,61 +147,92 @@ Three graduated levels control rule strictness:
 
 ---
 
-## Enforcement Hooks (Hard Gates)
+## Enforcement Hooks — Two-Phase Architecture (v3)
 
-Beyond text rules injected at session start, enforce-mode includes **3 runtime hooks** that actively gate Claude's behavior by intercepting tool calls:
+5 hooks using a two-phase architecture. All <10ms. Zero deadlocks. Per-session isolation.
 
-### Consolidated Guards (v2 — recommended)
+### How It Works
 
-3 hooks, one per event type. Maximum coverage, minimum latency:
+```
+Phase 1 (PreToolUse — per tool call, <10ms):
+  write-guard  → secrets: exit 2 | research: deny+retry | security: soft warn
+  dsa-guard    → complexity patterns: deny+retry | justified: pass
+  bash-guard   → git/inference/sleep gates
 
-| Hook | Event | Rules Covered | Hard Blocks |
-|------|-------|---------------|-------------|
-| `enforce-write-guard.js` | PreToolUse (Write/Edit/NotebookEdit) | #1,6 research + #9,37,38 secrets + #28-36 security | **Secrets** (exit 2) — API keys, tokens, private keys, DB URIs |
-| `enforce-bash-guard.js` | PreToolUse (Bash) | #2,7-11 git + #3,12 tests + #16-19 inference-bg + #24-27 cost | **Foreground inference** (exit 2), **git commit without tests** (exit 2), **git add .** (exit 2) |
-| `enforce-stop-guard.js` | Stop | #3,4,12-15 tests + #1,6 research + #53 session log + #55 requirements | Soft warnings (5 checks) |
+Phase 2 (Stop — at response end, <10ms):
+  stop-guard   → reads state file, catches unresolved recommendations
+```
 
-### What gets HARD BLOCKED (exit 2, physically impossible)
+### Gate Types
 
-| Action | Rule | Why |
-|--------|------|-----|
-| Writing code with hardcoded secrets (AWS keys, GitHub PATs, Stripe keys, private keys, DB URIs, JWTs) | #9, #37, #38 | Secrets in code = instant security breach |
-| `git commit` / `git push` without running tests | #2, #3, #7, #12 | Untested code in git history is irreversible |
-| `git add .` / `git add -A` | #9, #10, #11 | Catch-all staging may include secrets or binaries |
-| Running inference/GPU tasks in foreground (python inference.py, torchrun, ffmpeg video encoding) | #16-19 | Main agent must never sit idle — always background |
+| Gate | Mechanism | Evadable? |
+|------|-----------|-----------|
+| `exit 2` | Hard block — tool physically prevented | No |
+| `permissionDecision: "deny"` | Hard deny — blocked with retry instructions | No |
+| `additionalContext` | Soft warn — Claude sees warning, tool proceeds | Yes |
 
-### What gets SOFT WARNED (injected reminder)
+### What Gets HARD BLOCKED (exit 2)
 
-| Check | Rule | When |
-|-------|------|------|
-| Code with imports but no web research | #1, #6 | Write/Edit with import statements, no WebSearch in transcript |
-| Security anti-patterns (eval, SQL concat, CORS *, disabled SSL) | #28-36 | Detected in code being written |
-| Cloud cost operations (AWS/GCP/Azure instance launch, model downloads) | #24-27 | Detected in bash commands |
-| Code written but no tests ran | #3, #12 | At response completion |
-| Tests ran before last code change (stale) | #3, #12 | At response completion |
-| Session log not updated | #53 | At response completion |
-| New imports but requirements not updated | #55 | At response completion |
-| Multiple files changed without pre-completion review | #4, #56-58 | At response completion (3+ files) |
+| Action | Why |
+|--------|-----|
+| Hardcoded secrets (AWS keys, GitHub PATs, Stripe, private keys, DB URIs, JWTs) | Security — never allow |
+| `git add .env` (exact match) or `git add .` | Catch-all staging may include secrets |
+| `python train.py` in foreground | Must use `run_in_background=true` |
+| `torchrun` / `accelerate launch` in foreground | Must use background |
+| `sleep 60 && cat` (poll pattern) | Use `run_in_background` instead |
+
+### What Gets HARD DENIED (deny + retry guidance)
+
+| Action | Retry Path |
+|--------|------------|
+| External imports without web research | WebSearch/context7 first, then retry |
+| Algorithmic code without complexity justification | Add `// O(n)` comment or WebSearch, then retry |
+| `git commit` without tests in transcript | Run tests first, then retry |
+
+### What Gets SOFT WARNED
+
+| Check | When |
+|-------|------|
+| Security anti-patterns (eval, SQL concat, CORS *) | Code being written |
+| Cloud cost operations | Bash commands |
+| Empty transcript (research/git gates) | Fallback to prevent deadlock |
+| Phase 2: unresolved research/DSA | Response end |
+| Phase 2: stale tests, missing requirements sync | Response end |
+
+### Deadlock Prevention (10 fixes)
+
+| Fix | What Changed |
+|-----|-------------|
+| Inference regex | Anchored to `python *.py` filenames — string literals don't trigger |
+| Git commit + no transcript | Soft warn fallback — not hard block |
+| Secret file matching | Exact basename — `.env-display.tsx` no longer blocked |
+| Heroku regex | Requires `HEROKU_API_KEY=` context — bare UUIDs pass |
+| Empty transcript | Soft warn — prevents infinite deny loop |
+| `readFileSync` | Only flagged inside loops — standalone config reads pass |
+| `Promise.all()` | Narrowed to ORM patterns — `Promise.all()` passes |
+| Small lists | `if x in [1,2,3]` passes — only 10+ elements flagged |
+| Cross-hook ping-pong | DSA guard defers when write-guard already denied same file |
+| Self-exemption | Hook files + test files skip research/DSA checks |
+
+### Per-Session Isolation
+
+Each session has its own enforcement level stored in `/tmp/enforce-{session_id}.json`:
+
+```
+Session A: /enforce solo   → enforces at solo level
+Session B: /enforce off    → all hooks skip — no enforcement
+Session C: (default)       → enforces at config default level
+```
+
+Turning enforce off in one session does **not** affect other sessions. The global flag (`~/.claude/.enforce-active`) is only used for the statusline badge.
 
 ### Legacy Guards (v1 — still included)
 
-| Hook | Event | Rule | Note |
-|------|-------|------|------|
-| `enforce-research-gate.js` | PreToolUse (Write/Edit/NotebookEdit) | #1, #6 | Subset of write-guard |
-| `enforce-test-gate.js` | PreToolUse (Bash) | #2, #3 | Subset of bash-guard |
-| `enforce-pre-completion.js` | Stop | #3, #4 | Subset of stop-guard |
-
-### How they work
-
-- Each hook reads stdin JSON (tool_name, tool_input, transcript_path)
-- **Write guard**: Scans source code with 17 secret-detection regexes (gitleaks-inspired), 9 security anti-patterns, and import detection
-- **Bash guard**: Pattern-matches commands against inference patterns, git operations, and cost triggers. Checks transcript for test execution history
-- **Stop guard**: Single O(n) transcript scan tracking write positions, test positions, research usage, session log updates, and requirements changes
-- All hooks are pure Node.js stdlib — zero npm dependencies, <10ms execution
-
-### Why both text rules AND hooks?
-
-Text rules alone are advisory — Claude can ignore them under task pressure. Hooks are **mechanical enforcement**: the write-guard physically blocks secrets from being written, the bash-guard prevents untested commits, and the stop-guard catches missing test runs. Think of text rules as guidelines and hooks as guardrails.
+| Hook | Note |
+|------|------|
+| `enforce-research-gate.js` | Subset of write-guard |
+| `enforce-test-gate.js` | Subset of bash-guard |
+| `enforce-pre-completion.js` | Subset of stop-guard |
 
 ---
 
@@ -326,9 +357,11 @@ enforce-mode/
 |   +-- enforce-detect.js        # Weighted signal scoring for domain detection
 |   +-- enforce-rules.js         # Rule registry + context budget manager
 |   +-- enforce-compress.js      # Deterministic text compression for rules
-|   +-- enforce-write-guard.js   # PreToolUse - secrets + research + security (v2)
-|   +-- enforce-bash-guard.js    # PreToolUse - git + tests + inference-bg + cost (v2)
-|   +-- enforce-stop-guard.js    # Stop - tests + research + session log + requirements (v2)
+|   +-- enforce-state.js          # Cross-hook state + per-session level isolation (v3)
+|   +-- enforce-write-guard.js   # PreToolUse - secrets (exit 2) + research (deny) + security (v3)
+|   +-- enforce-dsa-guard.js     # PreToolUse - DSA complexity (deny) + self-exemption (v3)
+|   +-- enforce-bash-guard.js    # PreToolUse - git + inference + sleep-poll + cost (v3)
+|   +-- enforce-stop-guard.js    # Stop - Phase 2 accountability + tests + requirements (v3)
 |   +-- enforce-research-gate.js # PreToolUse - research check (v1 legacy)
 |   +-- enforce-test-gate.js     # PreToolUse - test check (v1 legacy)
 |   +-- enforce-pre-completion.js # Stop - test check (v1 legacy)
@@ -358,6 +391,7 @@ enforce-mode/
 |   +-- test-detect.js           # 13 tests - domain detection + dep parsing
 |   +-- test-rules.js            # 18 tests - rule assembly + level filtering + budget
 |   +-- test-compress.js         # 11 tests - text compression + code preservation
+|   +-- test-deadlocks.js        # 20 tests - all 10 deadlock scenarios + self-exemption
 |
 +-- .gitignore
 +-- CLAUDE.md                    # Project instructions for Claude Code
@@ -370,23 +404,32 @@ enforce-mode/
 ```
 enforce-activate.js (SessionStart entry point)
   +-- enforce-config.js    -> getDefaultLevel()
+  +-- enforce-state.js     -> setLevel(sessionId, level)  [per-session]
   +-- enforce-detect.js    -> detectDomains(cwd)
-  |   +-- parsers: getPythonDeps, getPackageJsonDeps, getGoDeps, getRustDeps, getComposerDeps
   +-- enforce-rules.js     -> buildContext(level, domains, pluginRoot)
       +-- enforce-compress.js -> compressRules(text)
-      +-- reads rules/domains/*.md at runtime
 
 enforce-mode-tracker.js (UserPromptSubmit)
   +-- enforce-config.js    -> getDefaultLevel()
+  +-- enforce-state.js     -> setLevel(sessionId, level)  [per-session]
 
-enforce-write-guard.js (PreToolUse: Write|Edit|NotebookEdit)
-  +-- reads transcript_path -> checks for WebSearch/WebFetch/context7 usage
+enforce-write-guard.js (Phase 1: PreToolUse Write|Edit)
+  +-- enforce-state.js     -> isActive(sessionId), recordPending()
+  +-- stdlib whitelist, self-exemption, empty transcript fallback
+  +-- secrets: exit 2 | research: deny+retry | security: soft
+
+enforce-dsa-guard.js (Phase 1: PreToolUse Write|Edit)
+  +-- enforce-state.js     -> isActive(sessionId), readState(), recordPending()
+  +-- self-exemption, cross-hook coordination (defers if write-guard pending)
+  +-- complexity: deny+retry | justified: pass
 
 enforce-bash-guard.js (PreToolUse: Bash)
-  +-- reads transcript_path -> checks for test/build command execution
+  +-- enforce-state.js     -> isActive(sessionId)
+  +-- git gates, inference detection, sleep-poll, cost alerts
 
-enforce-stop-guard.js (Stop)
-  +-- reads transcript_path -> checks write-then-test ordering
+enforce-stop-guard.js (Phase 2: Stop)
+  +-- enforce-state.js     -> isActive(), getUnresolved(), getSummary()
+  +-- transcript scan for tests, research, requirements
 ```
 
 ### Context Budget
@@ -418,12 +461,13 @@ node tests/test-config.js    #  8 tests - config resolution
 node tests/test-detect.js    # 13 tests - domain detection + dep parsing
 node tests/test-rules.js     # 18 tests - rule assembly + level filtering + budget
 node tests/test-compress.js  # 11 tests - text compression + code preservation
+node tests/test-deadlocks.js # 20 tests - deadlock scenarios + self-exemption
 
-# Run all 50 tests
-node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js
+# Run all 70 tests
+node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-deadlocks.js
 ```
 
-Tests create temporary project directories with mock dependencies to verify detection accuracy. All 50 tests pass on Node.js 18+.
+Tests create temporary project directories with mock dependencies to verify detection accuracy. All 70 tests pass on Node.js 18+.
 
 ---
 
