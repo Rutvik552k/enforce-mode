@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 440" fill="none">
+  <defs>
+    <linearGradient id="babg" x1="0" y1="0" x2="800" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="440" rx="10" fill="url(#babg)"/>
+  <rect width="800" height="440" rx="10" stroke="#30363d" stroke-width="1" fill="none"/>
+
+  <!-- ===== WITHOUT enforce-mode (left) ===== -->
+  <g transform="translate(15, 15)">
+    <!-- Header -->
+    <rect x="0" y="0" width="375" height="30" rx="8" fill="#f8514920"/>
+    <text x="187" y="20" font-family="monospace" font-size="13" fill="#f85149" text-anchor="middle" font-weight="700">&#x2717; Without enforce-mode</text>
+
+    <!-- Terminal -->
+    <rect x="0" y="38" width="375" height="380" rx="8" fill="#0d1117" stroke="#30363d" stroke-width="0.5"/>
+
+    <!-- Prompt 1 -->
+    <text x="10" y="62" font-family="monospace" font-size="11" fill="#6e7681">you&gt;</text>
+    <text x="50" y="62" font-family="monospace" font-size="11" fill="#c9d1d9">Add JWT auth to the API</text>
+
+    <!-- Response 1 -->
+    <text x="10" y="86" font-family="monospace" font-size="11" fill="#6e7681">claude&gt;</text>
+    <text x="65" y="86" font-family="monospace" font-size="11" fill="#c9d1d9">Sure! I'll add JWT authentication.</text>
+
+    <!-- Bad code -->
+    <rect x="15" y="98" width="345" height="108" rx="4" fill="#161b22" stroke="#30363d" stroke-width="0.5"/>
+    <text x="22" y="115" font-family="monospace" font-size="10" fill="#ff7b72">// Writes code from training data...</text>
+    <text x="22" y="131" font-family="monospace" font-size="10" fill="#c9d1d9">const jwt = require('jsonwebtoken');</text>
+    <text x="22" y="147" font-family="monospace" font-size="10" fill="#ff7b72">const SECRET = "my-secret-key";</text>
+    <text x="22" y="163" font-family="monospace" font-size="10" fill="#c9d1d9">app.post('/login', (req, res) =&gt; {</text>
+    <text x="22" y="179" font-family="monospace" font-size="10" fill="#ff7b72">  const token = jwt.sign(req.body,</text>
+    <text x="22" y="195" font-family="monospace" font-size="10" fill="#ff7b72">    SECRET); // hardcoded!</text>
+
+    <!-- Problems list -->
+    <text x="15" y="224" font-family="monospace" font-size="11" fill="#f85149" font-weight="600">Problems:</text>
+    <text x="15" y="244" font-family="monospace" font-size="10" fill="#f85149">&#x2717; Hardcoded secret in source code</text>
+    <text x="15" y="260" font-family="monospace" font-size="10" fill="#f85149">&#x2717; No input validation on req.body</text>
+    <text x="15" y="276" font-family="monospace" font-size="10" fill="#f85149">&#x2717; Used outdated API from training data</text>
+    <text x="15" y="292" font-family="monospace" font-size="10" fill="#f85149">&#x2717; No tests written or run</text>
+    <text x="15" y="308" font-family="monospace" font-size="10" fill="#f85149">&#x2717; Committed without asking</text>
+    <text x="15" y="324" font-family="monospace" font-size="10" fill="#f85149">&#x2717; No rate limiting</text>
+
+    <!-- Bottom verdict -->
+    <rect x="15" y="340" width="345" height="30" rx="4" fill="#f8514915"/>
+    <text x="187" y="360" font-family="monospace" font-size="11" fill="#f85149" text-anchor="middle">Shipped broken auth to production</text>
+
+    <!-- Sad face -->
+    <rect x="15" y="378" width="345" height="28" rx="4" fill="#f8514910"/>
+    <text x="187" y="396" font-family="monospace" font-size="11" fill="#484f58" text-anchor="middle">Security incident at 3am ...</text>
+  </g>
+
+  <!-- ===== WITH enforce-mode (right) ===== -->
+  <g transform="translate(410, 15)">
+    <!-- Header -->
+    <rect x="0" y="0" width="375" height="30" rx="8" fill="#23883820"/>
+    <text x="187" y="20" font-family="monospace" font-size="13" fill="#3fb950" text-anchor="middle" font-weight="700">&#x2713; With enforce-mode</text>
+
+    <!-- Terminal -->
+    <rect x="0" y="38" width="375" height="380" rx="8" fill="#0d1117" stroke="#3fb95030" stroke-width="1"/>
+
+    <!-- Prompt 1 -->
+    <text x="10" y="62" font-family="monospace" font-size="11" fill="#6e7681">you&gt;</text>
+    <text x="50" y="62" font-family="monospace" font-size="11" fill="#c9d1d9">Add JWT auth to the API</text>
+
+    <!-- Step 1: Research -->
+    <rect x="15" y="74" width="345" height="36" rx="4" fill="#1f6feb10" stroke="#1f6feb40" stroke-width="0.5"/>
+    <text x="22" y="89" font-family="monospace" font-size="10" fill="#58a6ff">&#x1F50D; Rule 1: Research before code</text>
+    <text x="22" y="103" font-family="monospace" font-size="10" fill="#8b949e">WebSearch: "express-jwt v4 migration guide 2025"</text>
+
+    <!-- Step 2: Secrets blocked -->
+    <rect x="15" y="118" width="345" height="36" rx="4" fill="#ff444410" stroke="#ff444440" stroke-width="0.5"/>
+    <text x="22" y="133" font-family="monospace" font-size="10" fill="#ff6b6b">&#x1F6D1; Hard block: secret detected</text>
+    <text x="22" y="147" font-family="monospace" font-size="10" fill="#8b949e">Rewrites to use process.env.JWT_SECRET</text>
+
+    <!-- Step 3: Validation -->
+    <rect x="15" y="162" width="345" height="36" rx="4" fill="#a371f710" stroke="#a371f740" stroke-width="0.5"/>
+    <text x="22" y="177" font-family="monospace" font-size="10" fill="#bc8cff">&#x1F6E1; Rule 11: Input validation enforced</text>
+    <text x="22" y="191" font-family="monospace" font-size="10" fill="#8b949e">Adds Zod schema + rate limiting middleware</text>
+
+    <!-- Step 4: Tests -->
+    <rect x="15" y="206" width="345" height="36" rx="4" fill="#23883810" stroke="#23883840" stroke-width="0.5"/>
+    <text x="22" y="221" font-family="monospace" font-size="10" fill="#3fb950">&#x2705; Rule 3: Test before ship</text>
+    <text x="22" y="235" font-family="monospace" font-size="10" fill="#8b949e">Runs auth.test.js — 12/12 passing</text>
+
+    <!-- Step 5: Pre-completion -->
+    <rect x="15" y="250" width="345" height="36" rx="4" fill="#e3b34110" stroke="#e3b34140" stroke-width="0.5"/>
+    <text x="22" y="265" font-family="monospace" font-size="10" fill="#e3b341">&#x1F50E; Rule 4: Pre-completion analysis</text>
+    <text x="22" y="279" font-family="monospace" font-size="10" fill="#8b949e">Walks auth flow, checks OWASP Top 10</text>
+
+    <!-- Step 6: Git discipline -->
+    <rect x="15" y="294" width="345" height="36" rx="4" fill="#1f6feb10" stroke="#1f6feb40" stroke-width="0.5"/>
+    <text x="22" y="309" font-family="monospace" font-size="10" fill="#58a6ff">&#x1F4CB; Rule 2: Git discipline</text>
+    <text x="22" y="323" font-family="monospace" font-size="10" fill="#8b949e">Asks before committing, checks for secrets</text>
+
+    <!-- Bottom verdict -->
+    <rect x="15" y="340" width="345" height="30" rx="4" fill="#23883815"/>
+    <text x="187" y="360" font-family="monospace" font-size="11" fill="#3fb950" text-anchor="middle">Secure, tested, verified auth shipped</text>
+
+    <!-- Happy result -->
+    <rect x="15" y="378" width="345" height="28" rx="4" fill="#23883810"/>
+    <text x="187" y="396" font-family="monospace" font-size="11" fill="#3fb950" text-anchor="middle">Sleep well. enforce-mode has your back.</text>
+  </g>
+
+  <!-- Center divider -->
+  <line x1="400" y1="55" x2="400" y2="425" stroke="#30363d" stroke-width="1" stroke-dasharray="6,4"/>
+</svg>

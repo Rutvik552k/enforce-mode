@@ -1,15 +1,25 @@
-# enforce-mode
+<p align="center">
+  <img src="assets/hero-banner.svg" alt="enforce-mode — Always-on engineering rules for Claude Code" width="100%"/>
+</p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests: 98 passing](https://img.shields.io/badge/Tests-98%20passing-brightgreen.svg)](#testing)
-[![Node.js](https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg)](#architecture)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#installation)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
+  <a href="#testing"><img src="https://img.shields.io/badge/Tests-98%20passing-brightgreen.svg" alt="Tests: 98 passing"/></a>
+  <a href="#architecture"><img src="https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg" alt="Node.js"/></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg" alt="Platform"/></a>
+</p>
 
 **Always-on universal engineering rules + project-aware domain rules for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).**
 
 > Think of it as ESLint for AI-assisted engineering — always on, context-aware, graduated enforcement.
 
 enforce-mode injects engineering best practices into every Claude Code session. Universal rules (research-first, git discipline, test-before-ship) are always active. Domain-specific rules (ML inference, GPU hardware, video pipelines, API security, cost tracking) activate automatically based on what your project contains — detected via weighted signal scoring.
+
+### Without vs. With enforce-mode
+
+<p align="center">
+  <img src="assets/before-after.svg" alt="Before and after enforce-mode" width="100%"/>
+</p>
 
 **v5 introduces PECK** — Progressive Escalation with Circuit-breaker and K-step recovery — a research-backed algorithm that prevents both deadlocks AND evasion. Based on techniques from [AgentSpec](https://arxiv.org/abs/2503.18666), [Agent Behavioral Contracts](https://arxiv.org/html/2602.22302v1), [Guardrails AI](https://www.guardrailsai.com), and distributed systems circuit breaker patterns.
 
@@ -87,11 +97,9 @@ Both installers:
 
 ### Statusline badge
 
-```
-[ENFORCE:SOLO]     # bright red badge in your terminal
-[ENFORCE:TEAM]
-[ENFORCE:PROD]
-```
+<p align="center">
+  <img src="assets/statusline-demo.svg" alt="Statusline badge demo" width="100%"/>
+</p>
 
 Statusline auto-configures on first activation. Unified script supports multiple mode badges simultaneously (e.g., `[CAVEMAN] [ENFORCE:SOLO]`).
 
@@ -159,6 +167,10 @@ Three graduated levels control rule strictness:
 **P**rogressive **E**scalation with **C**ircuit-breaker and **K**-step recovery.
 
 The core enforcement engine (v5) that prevents both deadlocks and evasion. Five interlocking mechanisms:
+
+<p align="center">
+  <img src="assets/peck-escalation.svg" alt="PECK escalation tiers — advisory to hard block" width="100%"/>
+</p>
 
 ### Escalation Tiers
 
@@ -312,6 +324,10 @@ Turning enforce off in one session does **not** affect other sessions. The globa
 
 Domains activate via **weighted signal scoring**. Each signal type has a weight; when cumulative score meets the threshold, the domain turns on.
 
+<p align="center">
+  <img src="assets/domain-detection.svg" alt="Domain detection — weighted signal scoring visualization" width="100%"/>
+</p>
+
 ### Supported Domains
 
 | Domain | Key Signals (weight) | Threshold | What It Enforces |
@@ -437,6 +453,7 @@ enforce-mode/
 |   +-- enforce-research-gate.js # PreToolUse — research check (v1 legacy)
 |   +-- enforce-test-gate.js     # PreToolUse — test check (v1 legacy)
 |   +-- enforce-pre-completion.js # Stop — test check (v1 legacy)
+|   +-- enforce-statusline-setup.js # Bundled statusline auto-configuration
 |   +-- enforce-statusline.sh    # Unix statusline badge
 |   +-- enforce-statusline.ps1   # Windows statusline badge
 |   +-- install.sh               # Standalone Unix installer
@@ -481,7 +498,7 @@ enforce-activate.js (SessionStart entry point)
   +-- enforce-detect.js    -> detectDomains(cwd)
   +-- enforce-rules.js     -> buildContext(level, domains, pluginRoot)
   |   +-- enforce-compress.js -> compressRules(text)
-  +-- auto-statusline.js   -> ensureStatusLine()  [unified badge]
+  +-- enforce-statusline-setup.js -> ensureStatusLine()  [bundled, unified badge]
 
 enforce-mode-tracker.js (UserPromptSubmit)
   +-- enforce-config.js    -> getDefaultLevel()

@@ -1,2 +1,11 @@
-description = "Switch enforcement level (solo/team/prod/off)"
-prompt = "Switch to enforce {{args}} mode. If no level specified, use solo. Confirm active level and list detected project domains with their confidence scores. Apply the appropriate rules for the selected level immediately."
+description = "Switch enforcement level (solo/team/prod/off) — persists across sessions"
+prompt = """Switch to enforce {{args}} mode. If no level specified, use solo.
+
+IMPORTANT: Persist the level change by running this command:
+```
+node -e "const {setDefaultLevel} = require('${CLAUDE_PLUGIN_ROOT}/hooks/enforce-config'); console.log(setDefaultLevel('{{args}}'))"
+```
+
+After persisting, confirm active level and list detected project domains with their confidence scores. Apply the appropriate rules for the selected level immediately.
+
+Note: The level is now saved to config and plugin settings — it will persist across sessions."""

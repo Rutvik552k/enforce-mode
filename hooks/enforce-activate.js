@@ -78,9 +78,9 @@ process.stdin.on('end', () => {
       'Stop: "stop enforce" or "normal mode"';
   }
 
-  // 5. Auto-configure unified statusline badge
+  // 5. Auto-configure unified statusline badge (bundled — no external dependency)
   try {
-    const { ensureStatusLine } = require(path.join(os.homedir(), '.claude', 'hooks', 'auto-statusline'));
+    const { ensureStatusLine } = require('./enforce-statusline-setup');
     ensureStatusLine();
   } catch { /* Silent — don't block session start */ }
 

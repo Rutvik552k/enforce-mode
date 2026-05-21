@@ -6,6 +6,14 @@
     "name": "Rutvik552k",
     "url": "https://github.com/Rutvik552k"
   },
+  "settings": {
+    "defaultLevel": {
+      "type": "string",
+      "description": "Default enforcement level for all sessions",
+      "enum": ["off", "solo", "team", "prod"],
+      "default": "solo"
+    }
+  },
   "hooks": {
     "SessionStart": [
       {

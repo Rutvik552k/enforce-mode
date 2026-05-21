@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 320" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="900" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="redGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ff4444"/>
+      <stop offset="100%" stop-color="#ff6b6b"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="320" rx="12" fill="url(#bg)"/>
+  <rect width="900" height="320" rx="12" stroke="#30363d" stroke-width="1" fill="none"/>
+
+  <!-- Decorative grid lines -->
+  <line x1="0" y1="80" x2="900" y2="80" stroke="#21262d" stroke-width="0.5"/>
+  <line x1="0" y1="160" x2="900" y2="160" stroke="#21262d" stroke-width="0.5"/>
+  <line x1="0" y1="240" x2="900" y2="240" stroke="#21262d" stroke-width="0.5"/>
+  <line x1="300" y1="0" x2="300" y2="320" stroke="#21262d" stroke-width="0.5"/>
+  <line x1="600" y1="0" x2="600" y2="320" stroke="#21262d" stroke-width="0.5"/>
+
+  <!-- Shield icon -->
+  <g transform="translate(100, 80)" filter="url(#softGlow)">
+    <path d="M50 10 L90 30 L90 70 Q90 110 50 130 Q10 110 10 70 L10 30 Z"
+          fill="none" stroke="url(#redGlow)" stroke-width="3"/>
+    <path d="M50 45 L40 60 L47 60 L43 80 L60 55 L53 55 L58 40 Z"
+          fill="#ff4444" opacity="0.9"/>
+  </g>
+
+  <!-- Title -->
+  <text x="220" y="115" font-family="'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace" font-size="42" font-weight="700" fill="#f0f6fc" filter="url(#glow)">enforce-mode</text>
+
+  <!-- Subtitle -->
+  <text x="220" y="150" font-family="'SF Mono', 'Cascadia Code', monospace" font-size="16" fill="#8b949e">Always-on engineering rules for Claude Code</text>
+
+  <!-- Feature pills -->
+  <g transform="translate(220, 175)">
+    <!-- PECK pill -->
+    <rect x="0" y="0" width="115" height="28" rx="14" fill="#ff444420" stroke="#ff4444" stroke-width="1"/>
+    <text x="57" y="18" font-family="monospace" font-size="12" fill="#ff6b6b" text-anchor="middle" font-weight="600">PECK v5</text>
+
+    <!-- Domain-aware pill -->
+    <rect x="125" y="0" width="145" height="28" rx="14" fill="#1f6feb20" stroke="#1f6feb" stroke-width="1"/>
+    <text x="197" y="18" font-family="monospace" font-size="12" fill="#58a6ff" text-anchor="middle" font-weight="600">Domain-Aware</text>
+
+    <!-- Zero deps pill -->
+    <rect x="280" y="0" width="115" height="28" rx="14" fill="#23883820" stroke="#238636" stroke-width="1"/>
+    <text x="337" y="18" font-family="monospace" font-size="12" fill="#3fb950" text-anchor="middle" font-weight="600">Zero Deps</text>
+
+    <!-- <10ms pill -->
+    <rect x="405" y="0" width="105" height="28" rx="14" fill="#a371f720" stroke="#a371f7" stroke-width="1"/>
+    <text x="457" y="18" font-family="monospace" font-size="12" fill="#bc8cff" text-anchor="middle" font-weight="600">&lt;10ms</text>
+  </g>
+
+  <!-- Terminal preview line -->
+  <g transform="translate(220, 225)">
+    <rect x="0" y="0" width="520" height="36" rx="6" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+    <text x="12" y="23" font-family="'SF Mono', monospace" font-size="13" fill="#8b949e">$</text>
+    <text x="28" y="23" font-family="'SF Mono', monospace" font-size="13" fill="#58a6ff">claude</text>
+    <text x="200" y="23" font-family="'SF Mono', monospace" font-size="13" fill="#ff4444" font-weight="700">[ENFORCE:SOLO]</text>
+    <text x="360" y="23" font-family="'SF Mono', monospace" font-size="13" fill="#3fb950">ready</text>
+  </g>
+
+  <!-- Bottom tagline -->
+  <text x="450" y="300" font-family="monospace" font-size="12" fill="#484f58" text-anchor="middle">ESLint for AI-assisted engineering — always on, context-aware, graduated enforcement</text>
+</svg>
