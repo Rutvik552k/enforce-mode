@@ -21,8 +21,10 @@
  *   - WebSearch/WebFetch with DSA-related terms, OR
  *   - Explicit complexity comment in the code (e.g., "# O(n log n)")
  *
- * GATES:
- *   - DSA code without research or justification → HARD BLOCK (exit 2)
+ * GATES (v5 — PECK: Progressive Escalation with Circuit-breaker and K-step recovery):
+ *   - DSA code without justification → PECK escalation (tier 0→3)
+ *   - Tier 0: advisory, Tier 1: warning, Tier 2: deny (bounded), Tier 3: hard block
+ *   - Circuit breaker opens after 3 failures → category hard-blocked
  */
 
 'use strict';
@@ -198,7 +200,7 @@ const SKIP_EXTENSIONS = [
 // STATE + SELF-EXEMPTION
 // ═══════════════════════════════════════════════════════════
 
-const { recordPending, readState, isActive } = require('./enforce-state');
+const { recordPending, readState, isActive, peckEvaluate, peckTick, peckRecordCompliance } = require('./enforce-state');
 
 const EXEMPT_PATHS = [
   '.claude/hooks', '.claude\\hooks',
@@ -295,13 +297,16 @@ async function main() {
   if (!source || !isCodeFile(filePath)) process.exit(0);
   if (isExemptPath(filePath)) process.exit(0);
 
-  // FIX #9: if write-guard already denied this file for research, defer DSA to Phase 2.
+  // Tick PECK recovery windows
+  peckTick(sessionId);
+
+  // FIX #9: if write-guard already flagged this file for research, defer DSA to Phase 2.
   if (sessionId) {
     const state = readState(sessionId);
     const hasResearchPending = state.pending.some(
       p => p.type === 'research' && p.file === filePath
     );
-    if (hasResearchPending) process.exit(0); // let write-guard handle it first
+    if (hasResearchPending) process.exit(0);
   }
 
   // Detect algorithmic patterns in code
@@ -313,34 +318,38 @@ async function main() {
   const hasResearch = hasDSAResearch(transcriptPath);
 
   if (hasJustification || hasResearch) {
+    // Compliance — decay PECK violations
+    peckRecordCompliance(sessionId, 'dsa', filePath);
     process.exit(0);
   }
 
-  // NOT justified — deny + retry guidance (not exit 2)
+  // NOT justified — PECK escalation
   const patternNames = dsaIssues.map(d => d.name);
   recordPending(sessionId, 'dsa', filePath, patternNames);
 
-  // No transcript → soft warn (prevents infinite deny)
-  if (!transcriptPath) {
+  const reason =
+    'Algorithmic patterns detected without complexity justification.\n' +
+    'File: ' + filePath + '\n\n' +
+    'Detected:\n' + dsaIssues.map(d => `  - ${d.name}: ${d.risk}`).join('\n') + '\n\n' +
+    'REQUIRED: Add complexity comment (// O(n log n)), justify bounds, or WebSearch for optimal approach.';
+
+  const result = peckEvaluate(sessionId, 'dsa', filePath, reason);
+
+  // Emit tier-appropriate response
+  if (result.tier >= 3) {
+    process.stderr.write(result.message);
+    process.exit(2);
+  }
+  if (result.tier === 2) {
     const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-      additionalContext: '[ENFORCE WARNING] Algorithmic patterns detected but transcript unavailable.\n' +
-        'Patterns: ' + patternNames.join(', ') + '\nFile: ' + filePath }};
+      permissionDecision: 'deny',
+      permissionDecisionReason: result.message }};
     process.stdout.write(JSON.stringify(out));
     process.exit(0);
   }
-
+  // Tier 0 or 1: approve + context
   const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-    permissionDecision: 'deny',
-    permissionDecisionReason: 'Algorithmic code without complexity justification',
-    additionalContext:
-      '[ENFORCE] Write denied — complexity analysis needed.\n\n' +
-      'File: ' + filePath + '\n\n' +
-      'Detected:\n' + dsaIssues.map(d => `  - ${d.name}: ${d.risk}`).join('\n') + '\n\n' +
-      'To unblock, do ONE first:\n' +
-      '  1. WebSearch for optimal algorithm/data structure\n' +
-      '  2. Add complexity comment: // O(n log n) — using built-in sort\n' +
-      '  3. Add justification: // O(n) — bounded by max 100 items\n\n' +
-      'Then retry.' }};
+    additionalContext: result.message }};
   process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }

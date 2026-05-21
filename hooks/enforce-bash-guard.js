@@ -10,17 +10,21 @@
  *   Rule #16-19    — All inference/GPU in background
  *   Rule #24-27    — Cost tracking and warnings
  *
- * GATES:
- *   - git commit/push without tests → HARD BLOCK (exit 2)
+ * GATES (v4 — Option E: Approve + Inject Context):
  *   - git add of secrets/binaries → HARD BLOCK (exit 2)
- *   - Foreground inference detected → HARD BLOCK (exit 2)
- *   - Expensive cloud operation → Soft warn
+ *   - Foreground inference → HARD BLOCK (exit 2)
+ *   - Long sleep-poll (>=30s) → HARD BLOCK (exit 2)
+ *   - git commit/push without tests → APPROVE + inject strong context
+ *   - Expensive cloud operation → APPROVE + inject warning
+ *
+ * NEVER uses permissionDecision:'deny' — zero deadlock risk.
+ * Phase 2 (stop-guard) enforces accountability.
  */
 
 'use strict';
 
 const fs = require('fs');
-const { isActive } = require('./enforce-state');
+const { isActive, peckEvaluate, peckTick, peckRecordCompliance } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // GIT GATES
@@ -227,6 +231,9 @@ async function main() {
   const cmd = toolInput.command || '';
   if (!cmd) process.exit(0);
 
+  // Tick PECK recovery windows on every tool call
+  peckTick(sessionId);
+
   // ── CHECK 1: INFERENCE IN FOREGROUND (HARD BLOCK) ──
   if (isInferenceCommand(cmd) && !isBgCommand(toolInput)) {
     process.stderr.write(
@@ -303,20 +310,34 @@ async function main() {
     const hasBuilds = transcriptHas(transcriptPath, BUILD_COMMANDS);
 
     if (!hasTests && !hasBuilds) {
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
+      const reason =
+        'git commit/push without tests or builds in this session.\n' +
+        'Rules #2, #3: Never push untested code.\n' +
+        'Run tests first (cargo test, pytest, npm test, etc.).';
+
+      const result = peckEvaluate(sessionId, 'test', cmd, reason);
+
+      if (result.tier >= 3) {
+        process.stderr.write(result.message);
+        process.exit(2);
+      }
+      if (result.tier === 2) {
+        const output = { hookSpecificOutput: { hookEventName: 'PreToolUse',
           permissionDecision: 'deny',
-          permissionDecisionReason: 'No tests or builds found in session',
-          additionalContext:
-            '[ENFORCE] git commit/push denied — no tests found.\n' +
-            'Rules #2, #3: Never push untested code.\n\n' +
-            'Run tests first (cargo test, pytest, npm test, etc.), then retry.\n' +
-            'If this project has no tests, tell the user explicitly.',
-        },
-      };
+          permissionDecisionReason: result.message }};
+        process.stdout.write(JSON.stringify(output));
+        process.exit(0);
+      }
+      // Tier 0-1: approve + context
+      const output = { hookSpecificOutput: { hookEventName: 'PreToolUse',
+        additionalContext: result.message }};
       process.stdout.write(JSON.stringify(output));
       process.exit(0);
+    }
+
+    if (hasTests) {
+      // Compliance — decay PECK violations for test category
+      peckRecordCompliance(sessionId, 'test', cmd);
     }
 
     if (!hasTests && hasBuilds) {

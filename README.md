@@ -1,7 +1,7 @@
 # enforce-mode
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests: 70 passing](https://img.shields.io/badge/Tests-70%20passing-brightgreen.svg)](#testing)
+[![Tests: 98 passing](https://img.shields.io/badge/Tests-98%20passing-brightgreen.svg)](#testing)
 [![Node.js](https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg)](#architecture)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](#installation)
 
@@ -10,6 +10,8 @@
 > Think of it as ESLint for AI-assisted engineering — always on, context-aware, graduated enforcement.
 
 enforce-mode injects engineering best practices into every Claude Code session. Universal rules (research-first, git discipline, test-before-ship) are always active. Domain-specific rules (ML inference, GPU hardware, video pipelines, API security, cost tracking) activate automatically based on what your project contains — detected via weighted signal scoring.
+
+**v5 introduces PECK** — Progressive Escalation with Circuit-breaker and K-step recovery — a research-backed algorithm that prevents both deadlocks AND evasion. Based on techniques from [AgentSpec](https://arxiv.org/abs/2503.18666), [Agent Behavioral Contracts](https://arxiv.org/html/2602.22302v1), [Guardrails AI](https://www.guardrailsai.com), and distributed systems circuit breaker patterns.
 
 **Zero npm dependencies. Pure Node.js stdlib. < 10ms startup.**
 
@@ -20,7 +22,8 @@ enforce-mode injects engineering best practices into every Claude Code session. 
 - [Quick Start](#quick-start)
 - [How It Works](#how-it-works)
 - [Enforcement Levels](#enforcement-levels)
-- [Enforcement Hooks (Hard Gates)](#enforcement-hooks-hard-gates)
+- [PECK Algorithm](#peck-algorithm)
+- [Enforcement Hooks](#enforcement-hooks)
 - [Domain Detection](#domain-detection)
 - [Configuration](#configuration)
 - [Adding Custom Domains](#adding-custom-domains)
@@ -90,6 +93,8 @@ Both installers:
 [ENFORCE:PROD]
 ```
 
+Statusline auto-configures on first activation. Unified script supports multiple mode badges simultaneously (e.g., `[CAVEMAN] [ENFORCE:SOLO]`).
+
 ---
 
 ## How It Works
@@ -101,10 +106,12 @@ Claude Code session starts
 SessionStart hook fires (enforce-activate.js)
   |
   +-- 1. Resolve level: env var > config file > default ('solo')
-  +-- 2. Scan cwd: single readdirSync + lazy manifest parsing
-  +-- 3. Score domains: weighted signals (deps x3, markers x2, extensions x1)
-  +-- 4. Assemble rules: universal + domain (level-filtered, budget-capped)
-  +-- 5. Emit to stdout -> becomes <system-reminder> -> Claude follows rules
+  +-- 2. Set per-session level in state file (session isolation)
+  +-- 3. Scan cwd: single readdirSync + lazy manifest parsing
+  +-- 4. Score domains: weighted signals (deps x3, markers x2, extensions x1)
+  +-- 5. Assemble rules: universal + domain (level-filtered, budget-capped)
+  +-- 6. Auto-configure statusline badge
+  +-- 7. Emit to stdout -> becomes <system-reminder> -> Claude follows rules
 ```
 
 ---
@@ -147,31 +154,110 @@ Three graduated levels control rule strictness:
 
 ---
 
-## Enforcement Hooks — Two-Phase Architecture (v3)
+## PECK Algorithm
 
-5 hooks using a two-phase architecture. All <10ms. Zero deadlocks. Per-session isolation.
+**P**rogressive **E**scalation with **C**ircuit-breaker and **K**-step recovery.
 
-### How It Works
+The core enforcement engine (v5) that prevents both deadlocks and evasion. Five interlocking mechanisms:
+
+### Escalation Tiers
+
+Every rule violation is tracked per category. Repeated violations escalate through 4 tiers:
+
+| Tier | Name | Action | Claude Experience |
+|------|------|--------|-------------------|
+| 0 | Advisory | `approve + additionalContext` | Tool executes, soft guidance injected |
+| 1 | Warning | `approve + strong warning` | Tool executes, escalation notice shown |
+| 2 | Soft Block | `permissionDecision: "deny"` | Tool blocked, 1 retry before escalation |
+| 3 | Hard Block | `exit 2` | Tool permanently blocked, retry loop terminated |
+
+### Category Budgets
+
+Each rule category has a violation budget. When exhausted, tier 3 activates:
+
+| Category | Budget | Escalation Speed |
+|----------|--------|-----------------|
+| `research` | 3 | Standard — 3 violations to hard-block |
+| `dsa` | 3 | Standard |
+| `test` | 2 | Faster — 2 violations to hard-block |
+| `security` | 1 | Immediate — first violation starts at tier 2+ |
+
+### Semantic Fingerprinting
+
+Actions are fingerprinted by `category:filePath`, not exact content. This catches retry variants — Claude changing variable names or comments but making the same violation.
+
+**Exact retry detection**: If the same fingerprint appears within 30 seconds, the violation is double-counted. An exact retry reaches hard-block in 2 calls instead of 3.
+
+### Circuit Breaker
+
+Per-category circuit breaker (adapted from [Hystrix](https://github.com/Netflix/Hystrix) for LLM agents):
 
 ```
-Phase 1 (PreToolUse — per tool call, <10ms):
-  write-guard  → secrets: exit 2 | research: deny+retry | security: soft warn
-  dsa-guard    → complexity patterns: deny+retry | justified: pass
-  bash-guard   → git/inference/sleep gates
-
-Phase 2 (Stop — at response end, <10ms):
-  stop-guard   → reads state file, catches unresolved recommendations
+CLOSED ──(3 failures)──> OPEN ──(2 intervening calls)──> HALF_OPEN ──(probe)──> CLOSED
+                           |                                  |
+                           |                                  +──(fail)──> OPEN
+                           +── All same-category actions → tier 3
 ```
 
-### Gate Types
+When a circuit opens, ALL actions in that category are hard-blocked regardless of individual violation count. The circuit probes half-open after Claude makes 2 non-violating tool calls (indicating changed approach).
 
-| Gate | Mechanism | Evadable? |
-|------|-----------|-----------|
-| `exit 2` | Hard block — tool physically prevented | No |
-| `permissionDecision: "deny"` | Hard deny — blocked with retry instructions | No |
-| `additionalContext` | Soft warn — Claude sees warning, tool proceeds | Yes |
+### K-Step Recovery
 
-### What Gets HARD BLOCKED (exit 2)
+On violation, a recovery window of K=5 tool calls starts. Claude has 5 tool calls to comply (e.g., WebSearch, add complexity comment). If the window expires without compliance, violations auto-escalate.
+
+### Forgiveness Decay
+
+When Claude complies (performs research, runs tests, adds complexity comments), violation count decays by 1 and the circuit breaker resets. Good behavior is rewarded.
+
+### Dead Letter Queue
+
+Actions that reach tier 3 (hard-block) are recorded in a dead letter queue. Phase 2 (stop-guard) surfaces all dead letters as unresolved compliance failures at session end.
+
+### Why PECK Prevents Both Problems
+
+| Problem | How PECK Solves It |
+|---------|--------------------|
+| **Deadlock** (infinite deny loop) | Tier 2 bounded — max 1 retry before tier 3 hard-block terminates loop |
+| **Evasion** (ignoring warnings) | Tier 0→1→2 — warnings escalate, then deny, then permanent block |
+| **Exact retries** | Fingerprint detects, double-counts toward escalation |
+| **Category-wide loops** | Circuit breaker opens after 3 failures — all same-category hard-blocked |
+| **Context compression forgetting** | K-step tracker re-injects every tool call |
+| **Regression after compliance** | Forgiveness decay only reduces by 1, not full reset |
+
+### Research Sources
+
+PECK synthesizes techniques from:
+
+- [AgentSpec](https://arxiv.org/abs/2503.18666) — `llm_self_examine` tiered enforcement
+- [Agent Behavioral Contracts](https://arxiv.org/html/2602.22302v1) — recovery windows, probabilistic satisfaction
+- [Guardrails AI](https://www.guardrailsai.com) — `FIX_REASK` pattern, bounded `num_reasks`
+- [Causality Laundering (ARM)](https://arxiv.org/abs/2604.04035) — denial-feedback leakage awareness
+- [Instruction Hierarchy](https://arxiv.org/html/2404.13208v1) — system-level framing for warnings
+- Circuit breaker pattern (Fowler/Hystrix) — adapted for intervening-call-based reset
+
+---
+
+## Enforcement Hooks
+
+6 hooks using a two-phase architecture with PECK. All <10ms. Per-session isolation.
+
+### Phase 1 — PreToolUse (per tool call)
+
+| Hook | Triggers On | Gate |
+|------|-------------|------|
+| `enforce-write-guard.js` | Write, Edit, NotebookEdit | Secrets: exit 2. Research + security: PECK escalation |
+| `enforce-dsa-guard.js` | Write, Edit, NotebookEdit | DSA complexity: PECK escalation. Cross-hook coordination with write-guard |
+| `enforce-bash-guard.js` | Bash | Git secrets/inference/sleep-poll: exit 2. Test gate: PECK escalation. Cost: soft warn |
+
+### Phase 2 — Stop (at response end)
+
+| Hook | What It Checks |
+|------|---------------|
+| `enforce-stop-guard.js` | Unresolved research/DSA, stale tests, missing requirements, PECK dead letters, escalation summary, circuit breaker status |
+
+### What Gets HARD BLOCKED (exit 2, always)
+
+These bypass PECK — immediate hard block regardless of tier:
 
 | Action | Why |
 |--------|-----|
@@ -179,27 +265,18 @@ Phase 2 (Stop — at response end, <10ms):
 | `git add .env` (exact match) or `git add .` | Catch-all staging may include secrets |
 | `python train.py` in foreground | Must use `run_in_background=true` |
 | `torchrun` / `accelerate launch` in foreground | Must use background |
-| `sleep 60 && cat` (poll pattern) | Use `run_in_background` instead |
+| `sleep 60 && cat` (poll pattern, >=30s) | Use `run_in_background` instead |
 
-### What Gets HARD DENIED (deny + retry guidance)
+### What Uses PECK Escalation (tier 0→3)
 
-| Action | Retry Path |
-|--------|------------|
-| External imports without web research | WebSearch/context7 first, then retry |
-| Algorithmic code without complexity justification | Add `// O(n)` comment or WebSearch, then retry |
-| `git commit` without tests in transcript | Run tests first, then retry |
+| Violation | Category | Budget | Tier 0 Message |
+|-----------|----------|--------|----------------|
+| External imports without web research | `research` | 3 | "WebSearch for library docs before relying on training knowledge" |
+| Algorithmic code without complexity justification | `dsa` | 3 | "Add complexity comment or WebSearch for optimal approach" |
+| `git commit` without tests in transcript | `test` | 2 | "Run tests first" |
+| Security anti-patterns (eval, SQL concat, CORS *) | `security` | 1 | "Security anti-pattern detected" |
 
-### What Gets SOFT WARNED
-
-| Check | When |
-|-------|------|
-| Security anti-patterns (eval, SQL concat, CORS *) | Code being written |
-| Cloud cost operations | Bash commands |
-| Empty transcript (research/git gates) | Fallback to prevent deadlock |
-| Phase 2: unresolved research/DSA | Response end |
-| Phase 2: stale tests, missing requirements sync | Response end |
-
-### Deadlock Prevention (10 fixes)
+### Deadlock Prevention (10 original fixes + PECK)
 
 | Fix | What Changed |
 |-----|-------------|
@@ -211,28 +288,23 @@ Phase 2 (Stop — at response end, <10ms):
 | `readFileSync` | Only flagged inside loops — standalone config reads pass |
 | `Promise.all()` | Narrowed to ORM patterns — `Promise.all()` passes |
 | Small lists | `if x in [1,2,3]` passes — only 10+ elements flagged |
-| Cross-hook ping-pong | DSA guard defers when write-guard already denied same file |
+| Cross-hook ping-pong | DSA guard defers when write-guard already flagged same file |
 | Self-exemption | Hook files + test files skip research/DSA checks |
+| **PECK bounded deny** | Tier 2 deny max 1 retry before tier 3 hard-block |
+| **PECK circuit breaker** | Opens after 3 failures — prevents category-wide loops |
+| **PECK exact retry** | Double-counts same fingerprint within 30s |
 
 ### Per-Session Isolation
 
-Each session has its own enforcement level stored in `/tmp/enforce-{session_id}.json`:
+Each session has its own PECK state stored in `/tmp/enforce-{session_id}.json`:
 
 ```
-Session A: /enforce solo   → enforces at solo level
+Session A: /enforce solo   → enforces at solo level, own PECK state
 Session B: /enforce off    → all hooks skip — no enforcement
-Session C: (default)       → enforces at config default level
+Session C: (default)       → enforces at config default level, own PECK state
 ```
 
 Turning enforce off in one session does **not** affect other sessions. The global flag (`~/.claude/.enforce-active`) is only used for the statusline badge.
-
-### Legacy Guards (v1 — still included)
-
-| Hook | Note |
-|------|------|
-| `enforce-research-gate.js` | Subset of write-guard |
-| `enforce-test-gate.js` | Subset of bash-guard |
-| `enforce-pre-completion.js` | Subset of stop-guard |
 
 ---
 
@@ -347,24 +419,24 @@ export ENFORCE_DEFAULT_LEVEL=prod
 enforce-mode/
 |
 +-- .claude-plugin/
-|   +-- plugin.json              # Hook declarations for Claude Code
+|   +-- plugin.json              # Hook declarations (v2.0.0 — PreToolUse + Stop)
 |   +-- marketplace.json         # Marketplace metadata
 |
 +-- hooks/
-|   +-- enforce-activate.js      # SessionStart - detect + emit rules
-|   +-- enforce-mode-tracker.js  # UserPromptSubmit - track /enforce commands
+|   +-- enforce-activate.js      # SessionStart — detect + emit rules + auto-statusline
+|   +-- enforce-mode-tracker.js  # UserPromptSubmit — track /enforce commands
 |   +-- enforce-config.js        # Config resolver (env > file > default)
 |   +-- enforce-detect.js        # Weighted signal scoring for domain detection
 |   +-- enforce-rules.js         # Rule registry + context budget manager
 |   +-- enforce-compress.js      # Deterministic text compression for rules
-|   +-- enforce-state.js          # Cross-hook state + per-session level isolation (v3)
-|   +-- enforce-write-guard.js   # PreToolUse - secrets (exit 2) + research (deny) + security (v3)
-|   +-- enforce-dsa-guard.js     # PreToolUse - DSA complexity (deny) + self-exemption (v3)
-|   +-- enforce-bash-guard.js    # PreToolUse - git + inference + sleep-poll + cost (v3)
-|   +-- enforce-stop-guard.js    # Stop - Phase 2 accountability + tests + requirements (v3)
-|   +-- enforce-research-gate.js # PreToolUse - research check (v1 legacy)
-|   +-- enforce-test-gate.js     # PreToolUse - test check (v1 legacy)
-|   +-- enforce-pre-completion.js # Stop - test check (v1 legacy)
+|   +-- enforce-state.js         # PECK engine + cross-hook state + per-session isolation (v5)
+|   +-- enforce-write-guard.js   # PreToolUse — secrets (exit 2) + research/security (PECK)
+|   +-- enforce-dsa-guard.js     # PreToolUse — DSA complexity (PECK) + cross-hook coordination
+|   +-- enforce-bash-guard.js    # PreToolUse — git/inference/sleep (exit 2) + test (PECK) + cost
+|   +-- enforce-stop-guard.js    # Stop — Phase 2 accountability + PECK dead letters + summary
+|   +-- enforce-research-gate.js # PreToolUse — research check (v1 legacy)
+|   +-- enforce-test-gate.js     # PreToolUse — test check (v1 legacy)
+|   +-- enforce-pre-completion.js # Stop — test check (v1 legacy)
 |   +-- enforce-statusline.sh    # Unix statusline badge
 |   +-- enforce-statusline.ps1   # Windows statusline badge
 |   +-- install.sh               # Standalone Unix installer
@@ -387,11 +459,12 @@ enforce-mode/
 |   +-- enforce.toml             # /enforce slash command definition
 |
 +-- tests/
-|   +-- test-config.js           #  8 tests - config resolution
-|   +-- test-detect.js           # 13 tests - domain detection + dep parsing
-|   +-- test-rules.js            # 18 tests - rule assembly + level filtering + budget
-|   +-- test-compress.js         # 11 tests - text compression + code preservation
-|   +-- test-deadlocks.js        # 20 tests - all 10 deadlock scenarios + self-exemption
+|   +-- test-config.js           #  8 tests — config resolution
+|   +-- test-detect.js           # 13 tests — domain detection + dep parsing
+|   +-- test-rules.js            # 18 tests — rule assembly + level filtering + budget
+|   +-- test-compress.js         # 11 tests — text compression + code preservation
+|   +-- test-deadlocks.js        # 20 tests — all 10 deadlock scenarios + self-exemption
+|   +-- test-peck.js             # 28 tests — PECK escalation, circuit breaker, recovery, DLQ
 |
 +-- .gitignore
 +-- CLAUDE.md                    # Project instructions for Claude Code
@@ -407,29 +480,30 @@ enforce-activate.js (SessionStart entry point)
   +-- enforce-state.js     -> setLevel(sessionId, level)  [per-session]
   +-- enforce-detect.js    -> detectDomains(cwd)
   +-- enforce-rules.js     -> buildContext(level, domains, pluginRoot)
-      +-- enforce-compress.js -> compressRules(text)
+  |   +-- enforce-compress.js -> compressRules(text)
+  +-- auto-statusline.js   -> ensureStatusLine()  [unified badge]
 
 enforce-mode-tracker.js (UserPromptSubmit)
   +-- enforce-config.js    -> getDefaultLevel()
   +-- enforce-state.js     -> setLevel(sessionId, level)  [per-session]
 
 enforce-write-guard.js (Phase 1: PreToolUse Write|Edit)
-  +-- enforce-state.js     -> isActive(sessionId), recordPending()
-  +-- stdlib whitelist, self-exemption, empty transcript fallback
-  +-- secrets: exit 2 | research: deny+retry | security: soft
+  +-- enforce-state.js     -> isActive(), peckEvaluate(), peckTick(), peckRecordCompliance()
+  +-- stdlib whitelist, self-exemption
+  +-- secrets: exit 2 | research + security: PECK tiers 0→3
 
 enforce-dsa-guard.js (Phase 1: PreToolUse Write|Edit)
-  +-- enforce-state.js     -> isActive(sessionId), readState(), recordPending()
+  +-- enforce-state.js     -> isActive(), readState(), peckEvaluate(), peckTick(), peckRecordCompliance()
   +-- self-exemption, cross-hook coordination (defers if write-guard pending)
-  +-- complexity: deny+retry | justified: pass
+  +-- DSA complexity: PECK tiers 0→3
 
 enforce-bash-guard.js (PreToolUse: Bash)
-  +-- enforce-state.js     -> isActive(sessionId)
-  +-- git gates, inference detection, sleep-poll, cost alerts
+  +-- enforce-state.js     -> isActive(), peckEvaluate(), peckTick(), peckRecordCompliance()
+  +-- git secrets/inference/sleep: exit 2 | test gate: PECK tiers 0→3 | cost: soft warn
 
 enforce-stop-guard.js (Phase 2: Stop)
-  +-- enforce-state.js     -> isActive(), getUnresolved(), getSummary()
-  +-- transcript scan for tests, research, requirements
+  +-- enforce-state.js     -> isActive(), getUnresolved(), getSummary(), peckGetSummary()
+  +-- transcript scan + PECK dead letters + escalation summary + circuit status
 ```
 
 ### Context Budget
@@ -449,6 +523,7 @@ Most confident domains emitted first. Over-budget domains truncated. Token compr
 - Manifest files parsed lazily — only if they exist
 - Never recursive — top-level directory only
 - O(n) on directory entries x O(m) domain rules (m=5, effectively constant)
+- PECK state: single JSON file read/write per hook invocation
 - < 10ms on typical projects
 
 ---
@@ -457,17 +532,18 @@ Most confident domains emitted first. Over-budget domains truncated. Token compr
 
 ```bash
 # Run individual test suites
-node tests/test-config.js    #  8 tests - config resolution
-node tests/test-detect.js    # 13 tests - domain detection + dep parsing
-node tests/test-rules.js     # 18 tests - rule assembly + level filtering + budget
-node tests/test-compress.js  # 11 tests - text compression + code preservation
-node tests/test-deadlocks.js # 20 tests - deadlock scenarios + self-exemption
+node tests/test-config.js    #  8 tests — config resolution
+node tests/test-detect.js    # 13 tests — domain detection + dep parsing
+node tests/test-rules.js     # 18 tests — rule assembly + level filtering + budget
+node tests/test-compress.js  # 11 tests — text compression + code preservation
+node tests/test-deadlocks.js # 20 tests — deadlock scenarios + self-exemption
+node tests/test-peck.js      # 28 tests — PECK engine (escalation, circuit breaker, recovery, DLQ)
 
-# Run all 70 tests
-node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-deadlocks.js
+# Run all 98 tests
+node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-deadlocks.js && node tests/test-peck.js
 ```
 
-Tests create temporary project directories with mock dependencies to verify detection accuracy. All 70 tests pass on Node.js 18+.
+Tests create temporary project directories with mock dependencies to verify detection accuracy. PECK tests verify escalation tiers, fingerprint deduplication, circuit breaker state transitions, K-step recovery windows, forgiveness decay, dead letter queue, and integration with all three guard hooks. All 98 tests pass on Node.js 18+.
 
 ---
 
@@ -532,8 +608,9 @@ Prod + all 5 domains            |        | 7,964 chars (within 8KB cap)
 | Always-on | Yes (same rules everywhere) | Yes (universal) + conditional (domain) |
 | Project-aware | No | Yes (weighted signal scoring) |
 | Levels | lite / full / ultra | solo / team / prod |
+| Enforcement | Behavioral (context injection) | PECK (escalating tiers, circuit breaker) |
 | Context cost | ~1KB | 2-8KB (scales with domains) |
-| Coexists | - | Yes (different flag files) |
+| Coexists | - | Yes (different flag files, unified statusline) |
 
 Both can run simultaneously. Caveman compresses *how* Claude talks; enforce-mode controls *what* Claude checks.
 
@@ -543,6 +620,10 @@ Both can run simultaneously. Caveman compresses *how* Claude talks; enforce-mode
 
 - **[caveman](https://github.com/JuliusBrussee/caveman)** — Claude Code communication mode plugin (activation pattern, hook architecture)
 - **[Everything Claude Code](https://github.com/affaan-m/everything-claude-code)** — production project type detection (marker files, dep parsing)
+- **[AgentSpec](https://arxiv.org/abs/2503.18666)** — tiered enforcement actions for LLM agents
+- **[Agent Behavioral Contracts](https://arxiv.org/html/2602.22302v1)** — recovery windows, probabilistic satisfaction
+- **[Guardrails AI](https://www.guardrailsai.com)** — FIX_REASK pattern, bounded retries
+- **[Netflix Hystrix](https://github.com/Netflix/Hystrix)** — circuit breaker pattern (adapted for LLM agents)
 - **GitHub Linguist** — weighted signal classification for repository languages
 - **ESLint flat config** — explicit ordered rule resolution
 - **SonarQube quality gates** — graduated severity enforcement
@@ -556,7 +637,7 @@ Both can run simultaneously. Caveman compresses *how* Claude talks; enforce-mode
 3. Add detection rules in `hooks/enforce-detect.js`
 4. Add domain rules in `rules/domains/my-domain.md`
 5. Write tests in `tests/`
-6. Run all tests: `node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js`
+6. Run all tests: `node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-deadlocks.js && node tests/test-peck.js`
 7. Submit a PR
 
 ---

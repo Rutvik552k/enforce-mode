@@ -1,25 +1,32 @@
 #!/usr/bin/env node
 /**
- * enforce-write-guard.js — PreToolUse hook for Write|Edit|NotebookEdit (v3)
+ * enforce-write-guard.js — PreToolUse hook for Write|Edit|NotebookEdit (v5 PECK)
+ *
+ * PECK: Progressive Escalation with Circuit-breaker and K-step recovery
  *
  * GATES:
- *   - Secrets detected → HARD BLOCK (exit 2)
- *   - External imports, no research, transcript available → deny + retry guidance
- *   - External imports, no transcript → soft warn (prevents infinite deny)
- *   - Security anti-patterns → soft warn
+ *   - Secrets detected → HARD BLOCK (exit 2) — always, no escalation
+ *   - External imports without research → PECK escalation (tier 0→3)
+ *   - Security anti-patterns → PECK escalation via 'security' category
+ *
+ * TIERS:
+ *   0: APPROVE + advisory context
+ *   1: APPROVE + strong warning with escalation notice
+ *   2: DENY (1 retry before auto-escalate)
+ *   3: HARD BLOCK (exit 2, terminates retry loop)
  *
  * DEADLOCK PREVENTION:
+ *   - Tier 2 (deny) bounded — max 1 retry before tier 3 hard-block
+ *   - Circuit breaker opens after 3 failures → all actions hard-blocked
  *   - Self-exemption: .claude/hooks/, enforce-mode/hooks/, test files
- *   - Stdlib whitelist: fs/os/path/json etc. never trigger research gate
- *   - Empty transcript fallback: soft warn instead of deny
- *   - Heroku regex narrowed: requires HEROKU_API_KEY context, not bare UUIDs
+ *   - Stdlib whitelist: never triggers research gate
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { recordPending, isActive } = require('./enforce-state');
+const { recordPending, isActive, peckEvaluate, peckTick, peckRecordCompliance } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // SECRET DETECTION (high-precision, known prefixes only)
@@ -40,14 +47,13 @@ const SECRET_PATTERNS = [
   { name: 'Generic Secret Assignment', regex: /(?:password|passwd|secret|token|api_key|apikey|api-key|auth_token)\s*[=:]\s*['"][A-Za-z0-9+/=_\-]{16,}['"]/ },
   { name: 'Database URI', regex: /(?:mongodb|postgres|mysql|redis):\/\/[^:]+:[^@]+@[^\s'"]+/ },
   { name: 'JWT Token', regex: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/ },
-  // FIX #4: require HEROKU_API_KEY context — bare UUIDs no longer match
   { name: 'Heroku API Key', regex: /(?:HEROKU_API_KEY|heroku.*api.*key)\s*[=:]\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]?/i },
   { name: 'SendGrid Key', regex: /SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/ },
   { name: 'Twilio Key', regex: /SK[0-9a-fA-F]{32}/ },
 ];
 
 // ═══════════════════════════════════════════════════════════
-// SECURITY ANTI-PATTERNS (soft warn only)
+// SECURITY ANTI-PATTERNS
 // ═══════════════════════════════════════════════════════════
 
 const SECURITY_PATTERNS = [
@@ -90,7 +96,7 @@ const SKIP_EXTENSIONS = [
 ];
 
 // ═══════════════════════════════════════════════════════════
-// STDLIB WHITELIST — never trigger research gate
+// STDLIB WHITELIST
 // ═══════════════════════════════════════════════════════════
 
 const NODE_STDLIB = [
@@ -127,7 +133,7 @@ function isStdlibOnly(source) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// SELF-EXEMPTION — prevent self-referential deadlock
+// SELF-EXEMPTION
 // ═══════════════════════════════════════════════════════════
 
 const EXEMPT_PATHS = [
@@ -180,6 +186,33 @@ function hasImports(source) {
   return IMPORT_PATTERNS.some(p => p.test(source));
 }
 
+/**
+ * Build PECK-tier-aware hook output.
+ * Tier 0-1: approve + additionalContext
+ * Tier 2:   deny + permissionDecisionReason
+ * Tier 3:   stderr + exit 2
+ */
+function emitPeckResult(result) {
+  if (result.tier >= 3) {
+    process.stderr.write(result.message);
+    process.exit(2);
+  }
+
+  if (result.tier === 2) {
+    const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: result.message }};
+    process.stdout.write(JSON.stringify(out));
+    process.exit(0);
+  }
+
+  // Tier 0 or 1: approve + context
+  const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
+    additionalContext: result.message }};
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
+}
+
 // ═══════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════
@@ -192,7 +225,6 @@ async function main() {
 
   if (!['Write', 'Edit', 'NotebookEdit'].includes(toolName)) process.exit(0);
 
-  // Per-session isolation: skip if enforce is off for THIS session
   const sessionId = input.session_id || '';
   if (sessionId && !isActive(sessionId)) process.exit(0);
 
@@ -200,6 +232,9 @@ async function main() {
   const source = toolInput.content || toolInput.new_source || toolInput.new_string || '';
 
   if (!source) process.exit(0);
+
+  // Tick PECK recovery windows on every tool call
+  peckTick(sessionId);
 
   // ── CHECK 1: SECRETS (always, even on exempt paths) ──
   const secrets = scanSecrets(source);
@@ -215,40 +250,36 @@ async function main() {
   // Skip non-code and exempt paths for remaining checks
   if (!isCodeFile(filePath) || isExemptPath(filePath)) process.exit(0);
 
-  // ── CHECK 2: RESEARCH GATE ──
+  // ── CHECK 2: RESEARCH GATE (PECK escalation) ──
   if (hasImports(source) && !isStdlibOnly(source) && !checkResearch(transcriptPath)) {
     recordPending(sessionId, 'research', filePath, ['external imports detected']);
 
-    // FIX #5: no transcript → soft warn (prevents infinite deny loop)
-    if (!transcriptPath) {
-      const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-        additionalContext: '[ENFORCE WARNING] External imports detected but transcript unavailable.\nVerify APIs via WebSearch before relying on training knowledge.\nFile: ' + filePath }};
-      process.stdout.write(JSON.stringify(out));
-      process.exit(0);
-    }
+    const reason =
+      'External library imports detected without prior web research.\n' +
+      'File: ' + filePath + '\n\n' +
+      'REQUIRED: WebSearch/context7/WebFetch for library docs before relying on training knowledge.';
 
-    // Transcript available but no research → hard deny with retry path
-    const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: 'External library imports without web research',
-      additionalContext:
-        '[ENFORCE] Write denied — external imports need verification.\n\n' +
-        'File: ' + filePath + '\n\n' +
-        'To unblock, do ONE first:\n' +
-        '  1. WebSearch for the library docs\n' +
-        '  2. context7 docs lookup\n' +
-        '  3. WebFetch official docs\n\n' +
-        'Then retry. Stdlib (fs/os/path/json) never triggers this.' }};
-    process.stdout.write(JSON.stringify(out));
-    process.exit(0);
+    const result = peckEvaluate(sessionId, 'research', filePath, reason);
+    emitPeckResult(result);
+    return; // emitPeckResult calls process.exit
   }
 
-  // ── CHECK 3: SECURITY SCAN (soft warn) ──
+  // Research done — record compliance to decay violations
+  if (hasImports(source) && !isStdlibOnly(source) && checkResearch(transcriptPath)) {
+    peckRecordCompliance(sessionId, 'research', filePath);
+  }
+
+  // ── CHECK 3: SECURITY SCAN (PECK escalation) ──
   const secIssues = scanSecurity(source);
   if (secIssues.length > 0) {
-    const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-      additionalContext: '[ENFORCE SECURITY WARNING]\n' + secIssues.map(s => `  - ${s}`).join('\n') }};
-    process.stdout.write(JSON.stringify(out));
+    const reason =
+      'Security anti-patterns detected:\n' +
+      secIssues.map(s => `  - ${s}`).join('\n') + '\n' +
+      'File: ' + filePath;
+
+    const result = peckEvaluate(sessionId, 'security', filePath, reason);
+    emitPeckResult(result);
+    return;
   }
 
   process.exit(0);

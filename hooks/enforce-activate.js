@@ -78,25 +78,11 @@ process.stdin.on('end', () => {
       'Stop: "stop enforce" or "normal mode"';
   }
 
-  // 5. Detect missing statusline config
+  // 5. Auto-configure unified statusline badge
   try {
-    let hasStatusline = false;
-    if (fs.existsSync(settingsPath)) {
-      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      if (settings.statusLine) hasStatusline = true;
-    }
-
-    if (!hasStatusline) {
-      const isWindows = process.platform === 'win32';
-      const scriptName = isWindows ? 'enforce-statusline.ps1' : 'enforce-statusline.sh';
-      const scriptPath = path.join(__dirname, scriptName);
-      const command = isWindows
-        ? 'powershell -ExecutionPolicy Bypass -File "' + scriptPath + '"'
-        : 'bash "' + scriptPath + '"';
-      const snippet = '"statusLine": { "type": "command", "command": ' + JSON.stringify(command) + ' }';
-      output += '\n\nSTATUSLINE SETUP NEEDED: add to ~/.claude/settings.json: ' + snippet;
-    }
-  } catch { /* Silent */ }
+    const { ensureStatusLine } = require(path.join(os.homedir(), '.claude', 'hooks', 'auto-statusline'));
+    ensureStatusLine();
+  } catch { /* Silent — don't block session start */ }
 
   process.stdout.write(output);
 });

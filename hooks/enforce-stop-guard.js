@@ -27,7 +27,7 @@
 'use strict';
 
 const fs = require('fs');
-const { getUnresolved, getSummary, recordResearch, isActive } = require('./enforce-state');
+const { getUnresolved, getSummary, recordResearch, isActive, peckGetSummary } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // DETECTION PATTERNS
@@ -285,6 +285,45 @@ async function main() {
       '[RULE #4, #56-58] Multiple files changed — pre-completion analysis required.',
       'Walk changed code paths. Check for: missing imports, wrong types, edge cases, security (OWASP Top 10).'
     );
+  }
+
+  // ── PECK ENFORCEMENT SUMMARY ──
+  if (sessionId) {
+    const peck = peckGetSummary(sessionId);
+
+    // Dead letters — actions that hit tier 3 and were permanently blocked
+    if (peck.deadLetterCount > 0) {
+      warnings.push(
+        '[PECK — DEAD LETTERS] ' + peck.deadLetterCount + ' action(s) were permanently blocked:',
+        ...peck.deadLetters.map(d =>
+          '  - [' + d.category + '] ' + (d.file || 'unknown') + ': ' + d.reason.split('\n')[0]
+        ),
+        'These represent unresolved compliance failures.'
+      );
+    }
+
+    // Active violations summary
+    const violationEntries = Object.entries(peck.violations);
+    if (violationEntries.length > 0) {
+      const lines = violationEntries.map(([cat, v]) =>
+        '  - ' + cat + ': tier ' + v.tier + ' (' + v.tierName + '), ' +
+        v.count + '/' + v.budget + ' violations, ' + v.remaining + ' remaining'
+      );
+      warnings.push(
+        '[PECK — ESCALATION STATUS]',
+        ...lines
+      );
+    }
+
+    // Circuit breaker status
+    const openCircuits = Object.entries(peck.circuits)
+      .filter(([, state]) => state !== 'CLOSED');
+    if (openCircuits.length > 0) {
+      warnings.push(
+        '[PECK — CIRCUIT BREAKERS]',
+        ...openCircuits.map(([cat, state]) => '  - ' + cat + ': ' + state)
+      );
+    }
   }
 
   if (warnings.length > 0) {
