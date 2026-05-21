@@ -6,9 +6,12 @@
  * Phase 2 hook (Stop) reads them to check compliance.
  *
  * State file: OS temp dir / enforce-{session_id}.json
- * Each entry: { type, file, patterns, timestamp }
+ * Fields: { level, pending, researched, dsaJustified }
  *
- * State is per-session. File auto-cleaned by OS temp dir policy.
+ * PER-SESSION ISOLATION: each session has its own level.
+ * Turning enforce off in session A does not affect session B.
+ * Global flag (~/.claude/.enforce-active) only used for statusline badge.
+ *
  * All operations are fail-safe — state loss = no enforcement (not deadlock).
  */
 
@@ -37,7 +40,7 @@ function getStatePath(sessionId) {
  * @returns {{ pending: Array<{type: string, file: string, patterns: string[], timestamp: number}>, researched: string[], dsaJustified: string[] }}
  */
 function readState(sessionId) {
-  const empty = { pending: [], researched: [], dsaJustified: [] };
+  const empty = { level: null, pending: [], researched: [], dsaJustified: [] };
   const statePath = getStatePath(sessionId);
   if (!statePath) return empty;
 
@@ -45,6 +48,7 @@ function readState(sessionId) {
     if (!fs.existsSync(statePath)) return empty;
     const data = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     return {
+      level: data.level || null,
       pending: Array.isArray(data.pending) ? data.pending : [],
       researched: Array.isArray(data.researched) ? data.researched : [],
       dsaJustified: Array.isArray(data.dsaJustified) ? data.dsaJustified : [],
@@ -151,6 +155,49 @@ function getSummary(sessionId) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Per-session level management
+// ---------------------------------------------------------------------------
+
+/**
+ * Set enforcement level for this session.
+ * @param {string} sessionId
+ * @param {string} level - 'off'|'solo'|'team'|'prod'
+ */
+function setLevel(sessionId, level) {
+  const state = readState(sessionId);
+  state.level = level;
+  writeState(sessionId, state);
+}
+
+/**
+ * Get enforcement level for this session.
+ * Returns null if not set (caller should fall back to config default).
+ * @param {string} sessionId
+ * @returns {string|null}
+ */
+function getLevel(sessionId) {
+  return readState(sessionId).level;
+}
+
+/**
+ * Check if session is actively enforcing.
+ * Returns true if: level not set (default = active) OR level is solo/team/prod.
+ * Returns false ONLY if level is explicitly 'off'.
+ * This ensures hooks run by default — you must opt OUT, not opt IN.
+ * @param {string} sessionId
+ * @returns {boolean}
+ */
+function isActive(sessionId) {
+  const level = getLevel(sessionId);
+  if (level === 'off') return false;
+  return true; // null (not set) or any active level = enforce is on
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup
+// ---------------------------------------------------------------------------
+
 function clearState(sessionId) {
   const statePath = getStatePath(sessionId);
   if (!statePath) return;
@@ -166,5 +213,8 @@ module.exports = {
   recordDSAJustified,
   getUnresolved,
   getSummary,
+  setLevel,
+  getLevel,
+  isActive,
   clearState,
 };

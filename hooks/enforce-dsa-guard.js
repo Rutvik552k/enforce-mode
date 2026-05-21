@@ -1,13 +1,9 @@
 #!/usr/bin/env node
 /**
- * enforce-dsa-guard.js — Phase 1 PreToolUse hook for Write|Edit|NotebookEdit
- *
- * TWO-PHASE ARCHITECTURE (Solution C):
- *   Phase 1 (this file): Detect DSA patterns → soft guidance + record to state
- *   Phase 2 (enforce-stop-guard.js): Check compliance at response end
+ * enforce-dsa-guard.js — PreToolUse hook for Write|Edit|NotebookEdit
  *
  * ENFORCES:
- *   - Algorithm efficiency awareness for non-trivial algorithmic code
+ *   - Algorithm efficiency research before writing non-trivial algorithmic code
  *   - Data structure selection justification
  *   - Complexity awareness (no O(n^2) when O(n log n) exists)
  *
@@ -17,13 +13,16 @@
  *   - Search/lookup patterns (linear scan vs hash/binary search)
  *   - Recursive functions (stack overflow, memoization needed?)
  *   - Large collection processing (streaming vs in-memory)
+ *   - Graph/tree traversals
+ *   - String matching patterns
+ *   - Caching/memoization decisions
+ *
+ * REQUIRES in transcript:
+ *   - WebSearch/WebFetch with DSA-related terms, OR
+ *   - Explicit complexity comment in the code (e.g., "# O(n log n)")
  *
  * GATES:
- *   - DSA code with complexity comment → PASS (immediate justification)
- *   - DSA code with prior DSA research → PASS
- *   - DSA code without either → SOFT GUIDANCE + record to state
- *
- * Zero deadlocks: never hard-blocks. Phase 2 catches missed analysis.
+ *   - DSA code without research or justification → HARD BLOCK (exit 2)
  */
 
 'use strict';
@@ -56,10 +55,11 @@ const DSA_PATTERNS = [
   },
 
   // --- Linear search when O(1) lookup exists ---
+  // FIX #8: only match lists with 10+ elements (small constant lists are O(1) effectively)
   {
-    name: 'Linear search in list (Python)',
-    regex: /if\s+\w+\s+in\s+\[/,
-    risk: 'O(n) list membership — use set() for O(1) lookup',
+    name: 'Linear search in large list (Python)',
+    regex: /if\s+\w+\s+in\s+\[(?:[^\]]*,){9,}/,
+    risk: 'O(n) list membership on 10+ items — use set() for O(1) lookup',
   },
   {
     name: 'Array.find/filter in loop (JS)',
@@ -110,14 +110,17 @@ const DSA_PATTERNS = [
   },
 
   // --- Large data in memory ---
+  // FIX #6: readFileSync only flagged inside loops (standalone config reads are fine)
   {
-    name: 'Read entire file into memory',
-    regex: /\.read\(\)\s*$|readFileSync\s*\(/m,
-    risk: 'Full file read — consider streaming/chunked read for large files',
+    name: 'readFileSync inside loop',
+    regex: /(?:for|while)\s*[\({].*readFileSync\s*\(/,
+    risk: 'Reading files inside loop — consider reading once before loop or streaming',
+    multiline: true,
   },
+  // FIX #7: .all() narrowed — exclude Promise.all(), only match ORM patterns
   {
     name: 'Load all rows from DB',
-    regex: /\.fetchall\(\)|\.all\(\)|SELECT\s+\*\s+FROM/i,
+    regex: /\.fetchall\(\)|(?:objects|query|queryset|model|Model)\s*\.\s*all\s*\(\)|SELECT\s+\*\s+FROM/i,
     risk: 'Loading all rows — consider pagination, LIMIT, or cursor-based iteration',
   },
 
@@ -192,10 +195,20 @@ const SKIP_EXTENSIONS = [
 ];
 
 // ═══════════════════════════════════════════════════════════
-// CROSS-HOOK STATE (Phase 1 → state file → Phase 2)
+// STATE + SELF-EXEMPTION
 // ═══════════════════════════════════════════════════════════
 
-const { recordPending } = require('./enforce-state');
+const { recordPending, readState, isActive } = require('./enforce-state');
+
+const EXEMPT_PATHS = [
+  '.claude/hooks', '.claude\\hooks',
+  'enforce-mode/hooks', 'enforce-mode\\hooks',
+  '/tests/', '\\tests\\', 'test-', '.test.', '.spec.',
+];
+
+function isExemptPath(fp) {
+  return fp && EXEMPT_PATHS.some(p => fp.includes(p));
+}
 
 // ═══════════════════════════════════════════════════════════
 // CORE FUNCTIONS
@@ -211,24 +224,6 @@ function readStdin() {
       catch { resolve({}); }
     });
   });
-}
-
-// Paths exempt from DSA checks (hooks, tests, config)
-const EXEMPT_PATHS = [
-  '.claude/hooks',
-  '.claude\\hooks',
-  'enforce-mode/hooks',
-  'enforce-mode\\hooks',
-  '/tests/',
-  '\\tests\\',
-  'test-',
-  '.test.',
-  '.spec.',
-];
-
-function isExemptPath(filePath) {
-  if (!filePath) return false;
-  return EXEMPT_PATHS.some(p => filePath.includes(p));
 }
 
 function isCodeFile(filePath) {
@@ -288,15 +283,26 @@ async function main() {
   const toolInput = input.tool_input || {};
   const transcriptPath = input.transcript_path || '';
 
-  if (!['Write', 'Edit', 'NotebookEdit'].includes(toolName)) {
-    process.exit(0);
-  }
+  if (!['Write', 'Edit', 'NotebookEdit'].includes(toolName)) process.exit(0);
+
+  // Per-session isolation: skip if enforce is off for THIS session
+  const sessionId = input.session_id || '';
+  if (sessionId && !isActive(sessionId)) process.exit(0);
 
   const filePath = toolInput.file_path || toolInput.notebook_path || '';
   const source = toolInput.content || toolInput.new_source || toolInput.new_string || '';
 
   if (!source || !isCodeFile(filePath)) process.exit(0);
   if (isExemptPath(filePath)) process.exit(0);
+
+  // FIX #9: if write-guard already denied this file for research, defer DSA to Phase 2.
+  if (sessionId) {
+    const state = readState(sessionId);
+    const hasResearchPending = state.pending.some(
+      p => p.type === 'research' && p.file === filePath
+    );
+    if (hasResearchPending) process.exit(0); // let write-guard handle it first
+  }
 
   // Detect algorithmic patterns in code
   const dsaIssues = detectDSAPatterns(source);
@@ -307,33 +313,36 @@ async function main() {
   const hasResearch = hasDSAResearch(transcriptPath);
 
   if (hasJustification || hasResearch) {
-    // Justified — pass through
     process.exit(0);
   }
 
-  // NOT justified — HARD DENY + retry guidance. <10ms, unevadable.
-  const sessionId = input.session_id || '';
+  // NOT justified — deny + retry guidance (not exit 2)
   const patternNames = dsaIssues.map(d => d.name);
   recordPending(sessionId, 'dsa', filePath, patternNames);
 
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: 'Algorithmic code without complexity justification',
-      additionalContext:
-        '[ENFORCE] Write denied — algorithmic patterns need complexity analysis.\n\n' +
-        'File: ' + filePath + '\n\n' +
-        'Detected patterns:\n' +
-        dsaIssues.map(d => `  - ${d.name}: ${d.risk}`).join('\n') + '\n\n' +
-        'To unblock, do ONE of these BEFORE retrying the write:\n' +
-        '  1. WebSearch for optimal algorithm/data structure for this use case\n' +
-        '  2. Add a complexity comment: # O(n log n) — using built-in sort\n' +
-        '  3. Add justification: # O(n) — bounded by max 100 items\n\n' +
-        'Then retry this exact write. It will pass once justified.',
-    },
-  };
-  process.stdout.write(JSON.stringify(output));
+  // No transcript → soft warn (prevents infinite deny)
+  if (!transcriptPath) {
+    const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
+      additionalContext: '[ENFORCE WARNING] Algorithmic patterns detected but transcript unavailable.\n' +
+        'Patterns: ' + patternNames.join(', ') + '\nFile: ' + filePath }};
+    process.stdout.write(JSON.stringify(out));
+    process.exit(0);
+  }
+
+  const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
+    permissionDecision: 'deny',
+    permissionDecisionReason: 'Algorithmic code without complexity justification',
+    additionalContext:
+      '[ENFORCE] Write denied — complexity analysis needed.\n\n' +
+      'File: ' + filePath + '\n\n' +
+      'Detected:\n' + dsaIssues.map(d => `  - ${d.name}: ${d.risk}`).join('\n') + '\n\n' +
+      'To unblock, do ONE first:\n' +
+      '  1. WebSearch for optimal algorithm/data structure\n' +
+      '  2. Add complexity comment: // O(n log n) — using built-in sort\n' +
+      '  3. Add justification: // O(n) — bounded by max 100 items\n\n' +
+      'Then retry.' }};
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
 }
 
 main().catch(() => process.exit(0));

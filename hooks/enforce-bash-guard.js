@@ -20,6 +20,7 @@
 'use strict';
 
 const fs = require('fs');
+const { isActive } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // GIT GATES
@@ -66,21 +67,24 @@ const BUILD_COMMANDS = [
 // ═══════════════════════════════════════════════════════════
 
 const INFERENCE_PATTERNS = [
-  // Python inference scripts
-  /python\s+.*(?:inference|generate|predict|train|eval|test_a2v|test_s2v|test_t2v|benchmark)/,
-  /python\s+.*(?:run_pipeline|run_model|forward_pass)/,
-  // PyTorch / TF
-  /torchrun\s+/,
-  /accelerate\s+launch/,
-  /python\s+-m\s+torch\.distributed/,
-  // Diffusers / ML frameworks
-  /python\s+.*(?:diffus|stable.diff|comfyui|webui)/i,
-  // FFmpeg (long video processing)
-  /ffmpeg\s+.*-i\s+.*\.(mp4|avi|mov|mkv|webm)/,
-  // Weight conversion
-  /python\s+.*(?:convert|quantiz|export).*(?:weight|model|ckpt|safetensor)/i,
-  // Generic GPU-heavy
-  /python\s+.*(?:vae|clip|unet|dit|transformer).*(?:encode|decode|forward)/i,
+  // Python ML scripts — match filenames/flags, not arbitrary substrings
+  // Anchored: python <space> <filename containing ML term>
+  /^python\s+\S*inference\S*\.py/,
+  /^python\s+\S*generate\S*\.py/,
+  /^python\s+\S*predict\S*\.py/,
+  /^python\s+\S*train\S*\.py/,
+  /^python\s+\S*benchmark\S*\.py/,
+  /^python\s+\S*(?:run_pipeline|run_model|forward_pass)\S*\.py/,
+  // PyTorch distributed — unambiguous commands
+  /^torchrun\s+/,
+  /^accelerate\s+launch/,
+  /^python\s+-m\s+torch\.distributed/,
+  // Diffusers / ML frameworks — unambiguous
+  /^python\s+\S*(?:diffus|stable.diff|comfyui|webui)\S*/i,
+  // FFmpeg long video processing
+  /^ffmpeg\s+.*-i\s+\S+\.(mp4|avi|mov|mkv|webm)/,
+  // Weight conversion — requires both terms
+  /^python\s+\S*(?:convert|quantiz|export)\S*.*(?:weight|model|ckpt|safetensor)/i,
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -167,18 +171,28 @@ function isBgCommand(input) {
 
 function checkGitAddForSecrets(cmd) {
   const violations = [];
-  for (const sf of SECRET_FILES) {
-    if (cmd.includes(sf)) {
-      violations.push(`Secret file: ${sf}`);
+  // Extract file paths from git add command (everything after "git add")
+  const filesStr = cmd.replace(/git\s+add\s*/, '').trim();
+  const files = filesStr.split(/\s+/).filter(f => f && !f.startsWith('-'));
+
+  for (const file of files) {
+    const basename = file.split('/').pop().split('\\').pop();
+    // Exact basename match for secret files (not substring)
+    for (const sf of SECRET_FILES) {
+      if (basename === sf || basename.startsWith(sf + '.')) {
+        violations.push(`Secret file: ${sf} (in ${file})`);
+      }
     }
-  }
-  for (const ext of BINARY_EXTENSIONS) {
-    if (cmd.includes(ext)) {
-      violations.push(`Binary file: *${ext}`);
+    // Extension match for binaries (check actual extension)
+    const ext = '.' + basename.split('.').pop();
+    for (const be of BINARY_EXTENSIONS) {
+      if (ext === be) {
+        violations.push(`Binary file: *${be} (${file})`);
+      }
     }
   }
   // git add . or git add -A (catch-all staging)
-  if (/git\s+add\s+(-A|--all|\.)/.test(cmd)) {
+  if (/git\s+add\s+(-A|--all|\.\s*$)/.test(cmd)) {
     violations.push('Catch-all staging (git add . / -A) — may include secrets or binaries');
   }
   return violations;
@@ -205,6 +219,10 @@ async function main() {
   const transcriptPath = input.transcript_path || '';
 
   if (toolName !== 'Bash') process.exit(0);
+
+  // Per-session isolation: skip if enforce is off for THIS session
+  const sessionId = input.session_id || '';
+  if (sessionId && !isActive(sessionId)) process.exit(0);
 
   const cmd = toolInput.command || '';
   if (!cmd) process.exit(0);
@@ -264,19 +282,41 @@ async function main() {
     }
   }
 
-  // ── CHECK 3: GIT COMMIT/PUSH WITHOUT TESTS (HARD BLOCK) ──
+  // ── CHECK 3: GIT COMMIT/PUSH WITHOUT TESTS ──
   if (isGitCommitPush(cmd)) {
+    // If transcript is unavailable, fall back to soft warn (not hard block)
+    // This prevents deadlock in doc-only projects or early-session commits
+    if (!transcriptPath) {
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext:
+            '[ENFORCE WARNING] No transcript available to verify test execution.\n' +
+            'Rule #3: Ensure tests were run before committing.',
+        },
+      };
+      process.stdout.write(JSON.stringify(output));
+      process.exit(0);
+    }
+
     const hasTests = transcriptHas(transcriptPath, TEST_COMMANDS);
     const hasBuilds = transcriptHas(transcriptPath, BUILD_COMMANDS);
 
     if (!hasTests && !hasBuilds) {
-      process.stderr.write(
-        '[ENFORCE HARD BLOCK] git commit/push blocked — no tests found.\n' +
-        'Rules #2, #3, #7, #12: Never push untested code.\n\n' +
-        'Run tests first (cargo test, pytest, npm test, etc.), then retry.\n' +
-        '"It should work" is NOT a valid test result.'
-      );
-      process.exit(2);
+      const output = {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: 'No tests or builds found in session',
+          additionalContext:
+            '[ENFORCE] git commit/push denied — no tests found.\n' +
+            'Rules #2, #3: Never push untested code.\n\n' +
+            'Run tests first (cargo test, pytest, npm test, etc.), then retry.\n' +
+            'If this project has no tests, tell the user explicitly.',
+        },
+      };
+      process.stdout.write(JSON.stringify(output));
+      process.exit(0);
     }
 
     if (!hasTests && hasBuilds) {

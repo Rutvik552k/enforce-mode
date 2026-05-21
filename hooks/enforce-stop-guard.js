@@ -27,7 +27,7 @@
 'use strict';
 
 const fs = require('fs');
-const { getUnresolved, getSummary, recordResearch } = require('./enforce-state');
+const { getUnresolved, getSummary, recordResearch, isActive } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // DETECTION PATTERNS
@@ -196,6 +196,9 @@ async function main() {
   const input = await readStdin();
   const transcriptPath = input.transcript_path || '';
   const sessionId = input.session_id || '';
+
+  // Per-session isolation: skip if enforce is off for THIS session
+  if (sessionId && !isActive(sessionId)) process.exit(0);
 
   const analysis = analyzeTranscript(transcriptPath);
 
