@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero-banner.svg" alt="enforce-mode — Always-on engineering rules for Claude Code" width="100%"/>
+  <img src="images/hero-banner.png" alt="enforce-mode — Always-on engineering rules for Claude Code" width="100%"/>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@ enforce-mode injects engineering best practices into every Claude Code session. 
 ### Without vs. With enforce-mode
 
 <p align="center">
-  <img src="assets/before-after.svg" alt="Before and after enforce-mode" width="100%"/>
+  <img src="images/before-after.png" alt="Before and after enforce-mode" width="100%"/>
 </p>
 
 **v5 introduces PECK** — Progressive Escalation with Circuit-breaker and K-step recovery — a research-backed algorithm that prevents both deadlocks AND evasion. Based on techniques from [AgentSpec](https://arxiv.org/abs/2503.18666), [Agent Behavioral Contracts](https://arxiv.org/html/2602.22302v1), [Guardrails AI](https://www.guardrailsai.com), and distributed systems circuit breaker patterns.
@@ -98,7 +98,7 @@ Both installers:
 ### Statusline badge
 
 <p align="center">
-  <img src="assets/statusline-demo.svg" alt="Statusline badge demo" width="100%"/>
+  <img src="images/statusline-demo.png" alt="Statusline badge demo" width="100%"/>
 </p>
 
 Statusline auto-configures on first activation. Unified script supports multiple mode badges simultaneously (e.g., `[CAVEMAN] [ENFORCE:SOLO]`).
@@ -169,7 +169,7 @@ Three graduated levels control rule strictness:
 The core enforcement engine (v5) that prevents both deadlocks and evasion. Five interlocking mechanisms:
 
 <p align="center">
-  <img src="assets/peck-escalation.svg" alt="PECK escalation tiers — advisory to hard block" width="100%"/>
+  <img src="images/peck-escalation.png" alt="PECK escalation tiers — advisory to hard block" width="100%"/>
 </p>
 
 ### Escalation Tiers
@@ -325,7 +325,7 @@ Turning enforce off in one session does **not** affect other sessions. The globa
 Domains activate via **weighted signal scoring**. Each signal type has a weight; when cumulative score meets the threshold, the domain turns on.
 
 <p align="center">
-  <img src="assets/domain-detection.svg" alt="Domain detection — weighted signal scoring visualization" width="100%"/>
+  <img src="images/domain-detection.png" alt="Domain detection — weighted signal scoring visualization" width="100%"/>
 </p>
 
 ### Supported Domains
@@ -380,11 +380,33 @@ export ENFORCE_DEFAULT_LEVEL=prod
 }
 ```
 
+### Plugin settings (in ~/.claude/settings.json)
+
+```jsonc
+{
+  "pluginSettings": {
+    "enforce-mode": {
+      "defaultLevel": "team"
+    }
+  }
+}
+```
+
+### Persistent level switching
+
+```
+/enforce prod    # persists across sessions — writes to config file + plugin settings
+/enforce solo    # switch back — also persisted
+```
+
+The `/enforce` command now saves the level to both the config file and plugin settings. No need to manually edit config files.
+
 ### Resolution order
 
 1. `ENFORCE_DEFAULT_LEVEL` environment variable
 2. Config file `defaultLevel` field
-3. Default: `solo`
+3. Plugin settings in `settings.json`
+4. Default: `solo`
 
 ---
 
