@@ -49,7 +49,7 @@ const SECRET_FILES = [
   'id_rsa', 'id_ed25519', '.pem', '.key',
 ];
 
-// Test command patterns
+// Test command patterns (substring match against transcript)
 const TEST_COMMANDS = [
   'cargo test', 'cargo nextest',
   'pytest', 'python -m pytest', 'python -m unittest',
@@ -57,6 +57,18 @@ const TEST_COMMANDS = [
   'yarn test', 'go test', 'dotnet test',
   'mix test', 'bundle exec rspec', 'phpunit',
   'gradle test', 'mvn test', './gradlew test',
+  'deno test', 'bun test',
+  'node --test',
+];
+
+// Regex patterns for test execution that substring matching can't catch
+// e.g. "node tests/test-config.js", "python test_auth.py", "ruby test/unit_test.rb"
+const TEST_COMMAND_REGEXES = [
+  /node\s+\S*test/i,
+  /python\s+\S*test/i,
+  /ruby\s+\S*test/i,
+  /bash\s+\S*test/i,
+  /sh\s+\S*test/i,
 ];
 
 const BUILD_COMMANDS = [
@@ -151,6 +163,16 @@ function transcriptHas(transcriptPath, patterns) {
     if (!transcriptPath || !fs.existsSync(transcriptPath)) return false;
     const content = fs.readFileSync(transcriptPath, 'utf8');
     return patterns.some(p => content.includes(p));
+  } catch {
+    return false;
+  }
+}
+
+function transcriptMatchesRegex(transcriptPath, regexes) {
+  try {
+    if (!transcriptPath || !fs.existsSync(transcriptPath)) return false;
+    const content = fs.readFileSync(transcriptPath, 'utf8');
+    return regexes.some(r => r.test(content));
   } catch {
     return false;
   }
@@ -306,7 +328,8 @@ async function main() {
       process.exit(0);
     }
 
-    const hasTests = transcriptHas(transcriptPath, TEST_COMMANDS);
+    const hasTests = transcriptHas(transcriptPath, TEST_COMMANDS) ||
+                     transcriptMatchesRegex(transcriptPath, TEST_COMMAND_REGEXES);
     const hasBuilds = transcriptHas(transcriptPath, BUILD_COMMANDS);
 
     if (!hasTests && !hasBuilds) {
