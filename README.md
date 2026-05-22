@@ -715,14 +715,14 @@ enforce-stop-guard.js (Phase 2: Stop)
 | Response efficiency directive | ~0.3KB |
 | Max total | 8KB hard cap |
 
-Most confident domains emitted first. Over-budget domains truncated. Token compression reduces total context by ~25% vs uncompressed. All 5 domains at prod level = ~8KB (within cap).
+Most confident domains emitted first (max 4). Over-budget domains truncated. Token compression reduces total context by ~25% vs uncompressed. Prod level with 4 active domains = ~7KB (within 8KB cap).
 
 ### Performance
 
 - Single `fs.readdirSync(cwd)` — one syscall, result cached across all domain rules
 - Manifest files parsed lazily — only if they exist
 - Never recursive — top-level directory only
-- O(n) on directory entries x O(m) domain rules (m=5, effectively constant)
+- O(n) on directory entries x O(m) domain rules (m=41, but only 2-4 active per project)
 - PECK state: single JSON file read/write per hook invocation
 - < 10ms on typical projects
 
@@ -732,10 +732,10 @@ Most confident domains emitted first. Over-budget domains truncated. Token compr
 
 Benchmarked WITH vs WITHOUT enforce-mode across 4 framework dimensions + 3 external tools. Full methodology and raw data in [`docs/benchmark-results.md`](docs/benchmark-results.md).
 
-### Grand Composite: 9.3 vs 2.3 (+304%)
+### Grand Composite: 9.4 vs 2.3 (+309%)
 
 ```
-WITH enforce-mode:    ██████████████████████████████████████████████░░░░  9.3 / 10
+WITH enforce-mode:    ███████████████████████████████████████████████░░░  9.4 / 10
 WITHOUT (baseline):   ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  2.3 / 10
 ```
 
@@ -743,10 +743,26 @@ WITHOUT (baseline):   ███████████░░░░░░░░�
 
 | Framework | WITH | WITHOUT | Delta | What it measures |
 |-----------|:----:|:-------:|:-----:|-----------------|
-| **battle** (5 dims) | 8.6 | 4.2 | +4.4 | AC completeness, code quality, security, style, bugs |
-| **verdict** (7 dims) | 9.5 | 3.8 | +5.7 | Correctness, completeness, adherence, actionability, efficiency, safety, consistency |
+| **battle** (5 dims) | 8.8 | 4.2 | +4.6 | AC completeness, code quality, security, style, bugs |
+| **verdict** (7 dims) | 9.8 | 3.8 | +5.9 | Correctness, completeness, adherence, actionability, efficiency, safety, consistency |
 | **harness-eval** (6 dims) | 9.7 | 1.3 | +8.3 | Correctness, safety, completeness, actionability, consistency, testability |
 | **Enforcement-specific** (8 dims) | 9.4 | 0.0 | +9.4 | False positive/negative rate, escalation accuracy, deadlock prevention, evasion resistance, recovery, session isolation, domain precision |
+
+### Score Changes (v3.0.1 → v3.0.2)
+
+| Metric | v3.0.1 | v3.0.2 | Change |
+|--------|:------:|:------:|:------:|
+| Domains | 11 | **41** | +30 |
+| Patterns | 23 | **106** | +83 |
+| Tests | 243 | **270** | +27 |
+| battle composite | 8.6 | **8.8** | +0.2 |
+| verdict composite | 9.5 | **9.8** | +0.3 |
+| Grand composite | 9.3 | **9.4** | +0.1 |
+| FP rate score | 9/10 | 9/10 | held |
+| FN rate score | 9/10 | 9/10 | held |
+| Deadlock prevention | 10/10 | 10/10 | held |
+| 100-eval latency | 136ms | 206ms | +51% (still <3ms/eval) |
+| Context budget (prod) | 7,991B | **6,951B** | -13% (domain cap) |
 
 ### External Tool Scores
 
@@ -762,10 +778,10 @@ WITHOUT (baseline):   ███████████░░░░░░░░�
 
 enforce-mode is not free. Two dimensions where baseline scores higher:
 
-- **Token Efficiency**: no plugin = zero overhead (10 vs 8). enforce-mode injects 1.9-8KB per session, mitigated by 17.7% compression.
-- **Runtime Efficiency**: no hooks = zero latency (10 vs 9). enforce-mode adds ~10ms per tool call.
+- **Token Efficiency**: no plugin = zero overhead (10 vs 8). enforce-mode injects 1.9-7KB per session, mitigated by 17.7% compression.
+- **Runtime Efficiency**: no hooks = zero latency (10 vs 9). enforce-mode adds ~2-3ms per tool call.
 
-Cost: ~2% efficiency loss. Benefit: +304% across all quality/safety/correctness dimensions.
+Cost: ~2% efficiency loss. Benefit: +309% across all quality/safety/correctness dimensions.
 
 ### Run Benchmarks
 
@@ -773,11 +789,11 @@ Cost: ~2% efficiency loss. Benefit: +304% across all quality/safety/correctness 
 # Internal benchmark (79 tests, deterministic, no API key needed)
 node tests/test-benchmark.js
 
-# Full suite (243 tests = 164 original + 79 benchmark)
-node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && \
-node tests/test-compress.js && node tests/test-peck.js && node tests/test-deadlocks.js && \
-node tests/test-peck-v2.js && node tests/test-detect-v2.js && node tests/test-domain-guard.js && \
-node tests/test-benchmark.js
+# Full suite (270 tests = 191 original + 79 benchmark)
+node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && \
+node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && \
+node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && \
+node tests/test-peck-v3.js && node tests/test-benchmark.js
 ```
 
 ---
