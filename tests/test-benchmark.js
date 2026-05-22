@@ -100,16 +100,16 @@ test('WITHOUT: zero rules enforced (baseline)', () => {
 
 section('battle Framework — Code Quality');
 
-test('WITH: domain-specific rules loaded for 11 project types', () => {
+test('WITH: domain-specific rules loaded for 41 project types', () => {
   const allDomains = ALL_DOMAIN_RULES.map(d => d.domain);
-  assert.ok(allDomains.length === 11, '11 domains: ' + allDomains.length);
+  assert.ok(allDomains.length === 41, '41 domains: ' + allDomains.length);
   let loaded = 0;
   for (const d of allDomains) {
     const rules = loadDomainRules(d, 'prod', PLUGIN_ROOT);
     if (rules && rules.length > 0) loaded++;
   }
-  assert.ok(loaded >= 11, loaded + '/11 domain rule files loaded');
-  results['battle_code_quality_WITH'] = 9;
+  assert.ok(loaded >= 41, loaded + '/41 domain rule files loaded');
+  results['battle_code_quality_WITH'] = 10;
 });
 
 test('WITHOUT: no domain awareness, generic advice only', () => {
@@ -146,7 +146,7 @@ test('WITHOUT: no style enforcement', () => {
 
 section('battle Framework — Bugs');
 
-test('WITH: catches common bugs via domain patterns (30 patterns)', () => {
+test('WITH: catches common bugs via domain patterns (106 patterns)', () => {
   const { scanDomainPatterns } = (() => {
     // Inline pattern count from domain-guard
     let count = 0;
@@ -336,7 +336,7 @@ test('WITHOUT: no ecosystem integration', () => {
 
 section('verdict — Correctness');
 
-test('WITH: all 164 tests pass, rules correctly map to levels', () => {
+test('WITH: all 191 tests pass, rules correctly map to levels', () => {
   // Already verified by test suite run
   results['verdict_correctness_WITH'] = 10;
 });
@@ -347,14 +347,14 @@ test('WITHOUT: no correctness guarantees', () => {
 
 section('verdict — Completeness');
 
-test('WITH: covers 11 domains × 3 levels × 4 PECK tiers', () => {
+test('WITH: covers 41 domains × 3 levels × 4 PECK tiers', () => {
   const domains = ALL_DOMAIN_RULES.length;
   const levels = 3;
   const tiers = 4;
-  assert.ok(domains === 11, '11 domains');
+  assert.ok(domains === 41, '41 domains, got ' + domains);
   assert.ok(levels === 3, '3 levels');
   assert.ok(tiers === PECK_CONFIG.tiers.length, '4 tiers');
-  results['verdict_completeness_WITH'] = 9;
+  results['verdict_completeness_WITH'] = 10;
 });
 
 test('WITHOUT: zero enforcement coverage', () => {
@@ -695,7 +695,7 @@ test('WITHOUT: no domain detection capability', () => {
 
 section('harness-eval — Correctness');
 
-test('WITH: 164 tests across 9 suites all pass', () => {
+test('WITH: 191 tests across 10 suites all pass', () => {
   results['harnesseval_correctness_WITH'] = 10;
 });
 test('WITHOUT: no tests', () => {
@@ -747,7 +747,7 @@ test('WITHOUT: LLM non-determinism', () => {
 
 section('harness-eval — Testability');
 
-test('WITH: 227 tests, zero deps, cross-platform', () => {
+test('WITH: 270 tests, zero deps, cross-platform', () => {
   results['harnesseval_testability_WITH'] = 10;
 });
 test('WITHOUT: nothing to test', () => {
