@@ -22,13 +22,24 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 ## Testing
 
 ```bash
-node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js
+node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-deadlocks.js && node tests/test-peck-v2.js && node tests/test-detect-v2.js && node tests/test-domain-guard.js
 ```
 
-All 39 tests must pass before committing.
+All 164 tests across 9 suites must pass before committing.
 
 ## Adding Domains
 
-1. Add signals to `DOMAIN_RULES` in `hooks/enforce-detect.js`
+1. Add signals to `DOMAIN_RULES_V2` in `hooks/enforce-detect.js`
 2. Create `rules/domains/<domain>.md` with severity-tagged rules
-3. Add tests in `tests/`
+3. Add patterns to `DOMAIN_PATTERNS` in `hooks/enforce-domain-guard.js` (with confidence level)
+4. Add tests in `tests/`
+
+## PECK v2 Algorithm
+
+Confidence-weighted escalation reduces false positives/negatives:
+- Patterns declare confidence: HIGH (1.0), MEDIUM (0.5), LOW (0.25)
+- Context detection suppresses matches in comments/tests/types (multiplier 0.0)
+- Domain relevance prevents cross-domain false triggers
+- effectiveWeight = confidence × context × domainRelevance
+- Below 0.5 threshold → advisory only, never escalates
+- Above 0.75 → accelerated escalation (skips tier 0)

@@ -13,6 +13,13 @@ const WG = path.join(HOOKS, 'enforce-write-guard.js');
 const DG = path.join(HOOKS, 'enforce-dsa-guard.js');
 const BG = path.join(HOOKS, 'enforce-bash-guard.js');
 
+const { clearState } = require(path.join(HOOKS, 'enforce-state.js'));
+
+// Clear all session states used by this test suite to prevent stale PECK state
+for (let i = 1; i <= 20; i++) {
+  clearState('dl' + i);
+}
+
 let passed = 0, failed = 0;
 
 function test(name, hook, json, expectExit, expectDeny) {

@@ -275,7 +275,7 @@ const DOMAIN_RULES = [
  * @param {string} [projectDir] - Defaults to process.cwd()
  * @returns {Array<{domain: string, score: number}>} Sorted by score desc
  */
-function detectDomains(projectDir) {
+function detectDomains(projectDir, useAllRules = true) {
   projectDir = projectDir || process.cwd();
 
   // Single readdirSync — O(n) on directory entries, cached across all rules
@@ -316,7 +316,10 @@ function detectDomains(projectDir) {
 
   const results = [];
 
-  for (const rule of DOMAIN_RULES) {
+  // Use all rules (v1 + v2) by default, legacy mode uses v1 only
+  const ruleset = useAllRules ? [...DOMAIN_RULES, ...DOMAIN_RULES_V2] : DOMAIN_RULES;
+
+  for (const rule of ruleset) {
     let score = 0;
 
     // Score deps (strongest signal: 2-3 points)
@@ -360,9 +363,251 @@ function detectDomains(projectDir) {
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// PECK v2: New domain detection rules (blockchain, frontend, mobile,
+// research-paper, model-training, book-generation)
+// ---------------------------------------------------------------------------
+
+const DOMAIN_RULES_V2 = [
+  {
+    domain: 'blockchain',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'hardhat', weight: 3 },
+        { name: 'truffle', weight: 3 },
+        { name: 'ethers', weight: 2 },
+        { name: 'web3', weight: 2 },
+        { name: 'web3.py', weight: 2 },
+        { name: '@openzeppelin', weight: 3 },
+        { name: 'brownie', weight: 2 },
+        { name: 'foundry', weight: 3 },
+        { name: 'viem', weight: 2 },
+        { name: 'wagmi', weight: 2 },
+        { name: 'solmate', weight: 2 },
+        { name: 'anchor', weight: 2 },
+        { name: '@solana/web3.js', weight: 2 },
+      ],
+      files: [
+        { ext: '.sol', weight: 3 },
+        { ext: '.vy', weight: 2 },
+      ],
+      dirs: [
+        { name: 'contracts', weight: 2 },
+        { name: 'hardhat', weight: 2 },
+        { name: 'foundry', weight: 2 },
+        { name: 'scripts', weight: 1 },
+      ],
+      markers: [
+        { name: 'hardhat.config.js', weight: 2 },
+        { name: 'hardhat.config.ts', weight: 2 },
+        { name: 'truffle-config.js', weight: 2 },
+        { name: 'foundry.toml', weight: 3 },
+        { name: 'remappings.txt', weight: 2 },
+        { name: 'Anchor.toml', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'frontend',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'react', weight: 2 },
+        { name: 'react-dom', weight: 2 },
+        { name: 'next', weight: 3 },
+        { name: '@next/', weight: 2 },
+        { name: 'vue', weight: 2 },
+        { name: 'nuxt', weight: 2 },
+        { name: 'svelte', weight: 2 },
+        { name: '@angular/core', weight: 2 },
+        { name: 'solid-js', weight: 2 },
+        { name: 'tailwindcss', weight: 1 },
+        { name: '@radix-ui', weight: 1 },
+        { name: '@shadcn', weight: 1 },
+      ],
+      files: [
+        { ext: '.tsx', weight: 2 },
+        { ext: '.jsx', weight: 2 },
+        { ext: '.vue', weight: 2 },
+        { ext: '.svelte', weight: 2 },
+      ],
+      dirs: [
+        { name: 'pages', weight: 1 },
+        { name: 'app', weight: 1 },
+        { name: 'components', weight: 2 },
+        { name: 'src', weight: 1 },
+      ],
+      markers: [
+        { name: 'next.config.js', weight: 2 },
+        { name: 'next.config.ts', weight: 2 },
+        { name: 'next.config.mjs', weight: 2 },
+        { name: 'vite.config.ts', weight: 2 },
+        { name: 'tailwind.config.js', weight: 1 },
+        { name: 'tailwind.config.ts', weight: 1 },
+        { name: 'postcss.config.js', weight: 1 },
+      ]
+    }
+  },
+  {
+    domain: 'mobile',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'react-native', weight: 3 },
+        { name: 'expo', weight: 3 },
+        { name: '@react-navigation', weight: 2 },
+        { name: 'flutter', weight: 3 },
+        { name: 'kotlin', weight: 2 },
+        { name: 'swift', weight: 2 },
+        { name: '@capacitor', weight: 2 },
+        { name: 'ionic', weight: 2 },
+      ],
+      files: [
+        { ext: '.swift', weight: 2 },
+        { ext: '.kt', weight: 2 },
+        { ext: '.dart', weight: 2 },
+        { ext: '.xcodeproj', weight: 3 },
+      ],
+      dirs: [
+        { name: 'android', weight: 2 },
+        { name: 'ios', weight: 2 },
+        { name: 'native', weight: 1 },
+        { name: 'platforms', weight: 1 },
+      ],
+      markers: [
+        { name: 'app.json', weight: 1 },
+        { name: 'expo.json', weight: 2 },
+        { name: 'pubspec.yaml', weight: 3 },
+        { name: 'Podfile', weight: 2 },
+        { name: 'build.gradle', weight: 2 },
+        { name: 'AndroidManifest.xml', weight: 2 },
+        { name: 'Info.plist', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'research-paper',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'scipy', weight: 1 },
+        { name: 'statsmodels', weight: 2 },
+        { name: 'matplotlib', weight: 1 },
+        { name: 'seaborn', weight: 1 },
+        { name: 'pandas', weight: 1 },
+        { name: 'sklearn', weight: 1 },
+        { name: 'scikit-learn', weight: 1 },
+      ],
+      files: [
+        { ext: '.tex', weight: 3 },
+        { ext: '.bib', weight: 3 },
+        { ext: '.sty', weight: 2 },
+        { ext: '.cls', weight: 2 },
+        { ext: '.ipynb', weight: 1 },
+      ],
+      dirs: [
+        { name: 'figures', weight: 1 },
+        { name: 'tables', weight: 1 },
+        { name: 'experiments', weight: 2 },
+        { name: 'results', weight: 1 },
+        { name: 'paper', weight: 2 },
+      ],
+      markers: [
+        { name: 'references.bib', weight: 3 },
+        { name: 'bibliography.bib', weight: 3 },
+        { name: 'main.tex', weight: 3 },
+        { name: 'paper.tex', weight: 3 },
+        { name: 'Makefile', weight: 1 },
+      ]
+    }
+  },
+  {
+    domain: 'model-training',
+    threshold: 4,
+    signals: {
+      deps: [
+        { name: 'torch', weight: 2 },
+        { name: 'transformers', weight: 2 },
+        { name: 'datasets', weight: 2 },
+        { name: 'wandb', weight: 3 },
+        { name: 'mlflow', weight: 3 },
+        { name: 'optuna', weight: 2 },
+        { name: 'ray', weight: 2 },
+        { name: 'lightning', weight: 3 },
+        { name: 'pytorch-lightning', weight: 3 },
+        { name: 'trl', weight: 3 },
+        { name: 'peft', weight: 3 },
+        { name: 'bitsandbytes', weight: 2 },
+        { name: 'deepspeed', weight: 3 },
+        { name: 'fairscale', weight: 2 },
+      ],
+      files: [
+        { ext: '.yaml', weight: 1 },
+        { ext: '.ipynb', weight: 1 },
+      ],
+      dirs: [
+        { name: 'experiments', weight: 2 },
+        { name: 'configs', weight: 1 },
+        { name: 'data', weight: 1 },
+        { name: 'outputs', weight: 1 },
+        { name: 'logs', weight: 1 },
+        { name: 'checkpoints', weight: 2 },
+        { name: 'runs', weight: 2 },
+      ],
+      markers: [
+        { name: 'train.py', weight: 2 },
+        { name: 'trainer.py', weight: 2 },
+        { name: 'config.yaml', weight: 1 },
+        { name: 'sweep.yaml', weight: 2 },
+        { name: 'ds_config.json', weight: 3 },
+      ]
+    }
+  },
+  {
+    domain: 'book-generation',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'mdbook', weight: 3 },
+        { name: 'sphinx', weight: 2 },
+        { name: 'jupyter-book', weight: 3 },
+        { name: 'honkit', weight: 2 },
+        { name: 'gitbook', weight: 2 },
+        { name: 'docusaurus', weight: 2 },
+      ],
+      files: [
+        { ext: '.tex', weight: 1 },
+        { ext: '.rst', weight: 2 },
+        { ext: '.adoc', weight: 2 },
+      ],
+      dirs: [
+        { name: 'chapters', weight: 3 },
+        { name: 'content', weight: 1 },
+        { name: 'docs', weight: 1 },
+        { name: 'manuscript', weight: 3 },
+        { name: 'book', weight: 3 },
+      ],
+      markers: [
+        { name: 'SUMMARY.md', weight: 3 },
+        { name: 'book.toml', weight: 3 },
+        { name: 'book.json', weight: 3 },
+        { name: '_toc.yml', weight: 3 },
+        { name: 'conf.py', weight: 2 },
+        { name: 'mkdocs.yml', weight: 2 },
+      ]
+    }
+  },
+];
+
+// Merge v2 domains into main DOMAIN_RULES array
+const ALL_DOMAIN_RULES = [...DOMAIN_RULES, ...DOMAIN_RULES_V2];
+
 module.exports = {
   detectDomains,
   DOMAIN_RULES,
+  DOMAIN_RULES_V2,
+  ALL_DOMAIN_RULES,
   // Exported for testing
   getPackageJsonDeps,
   getPythonDeps,
