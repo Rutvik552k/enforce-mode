@@ -145,6 +145,7 @@ function loadDomainRules(domain, level, pluginRoot) {
 
 const MAX_BUDGET = 8192;          // 8KB total
 const DOMAIN_BUDGET_EACH = 1024;  // 1KB per domain
+const MAX_DOMAINS_IN_CONTEXT = 4; // v3: Hard cap to stay within budget (Change 10)
 
 /**
  * Build the full context string emitted to stdout (becomes <system-reminder>).
@@ -180,8 +181,10 @@ function buildContext(level, detectedDomains, pluginRoot) {
   usedBytes += universalBlock.length;
 
   // Domain-specific rules (most confident first, budget-capped)
-  if (detectedDomains.length > 0) {
-    for (const { domain, score } of detectedDomains) {
+  // v3: Hard cap at MAX_DOMAINS_IN_CONTEXT to guarantee budget (Change 10)
+  const cappedDomains = detectedDomains.slice(0, MAX_DOMAINS_IN_CONTEXT);
+  if (cappedDomains.length > 0) {
+    for (const { domain, score } of cappedDomains) {
       if (usedBytes >= MAX_BUDGET) break;
 
       const domainContent = loadDomainRules(domain, level, pluginRoot);

@@ -5,41 +5,71 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 ## Structure
 
 - `hooks/` — Core logic (activate, detect, config, rules, tracker) + installers + statusline scripts
-- `rules/` — Rule markdown files: `universal.md` + `domains/*.md`
+- `hooks/domains/` — Modular domain pattern files (v3: 30 domains, 83 patterns)
+- `rules/` — Rule markdown files: `universal.md` + `domains/*.md` (41 domains)
 - `skills/enforce/SKILL.md` — Source of truth for all rule definitions
 - `commands/enforce.toml` — `/enforce` slash command
-- `tests/` — 39 tests across 3 suites (config, detect, rules)
+- `tests/` — 191 tests across 10 suites
 - `.claude-plugin/` — Plugin manifest for Claude Code marketplace
 
 ## Key Patterns
 
 - Entry point: `hooks/enforce-activate.js` (SessionStart hook)
-- Domain detection: weighted signal scoring in `hooks/enforce-detect.js`
+- Domain detection: weighted signal scoring in `hooks/enforce-detect.js` (v1+v2+v3 = 41 domains)
+- Domain patterns: modular loading from `hooks/domains/*.js` (v3)
 - Level filtering: severity tags `[WARN]`/`[STRICT]`/`[CRITICAL]` mapped to solo/team/prod
-- Context budget: 8KB max, ~2KB universal + ~1KB per domain
+- Level-aware enforcement: guards respect severity × level (v3)
+- Context budget: 8KB max, ~2KB universal + ~1KB per domain (max 4 domains)
 - Zero npm dependencies — pure Node.js stdlib
 
 ## Testing
 
 ```bash
-node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-deadlocks.js && node tests/test-peck-v2.js && node tests/test-detect-v2.js && node tests/test-domain-guard.js
+node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js
 ```
 
-All 164 tests across 9 suites must pass before committing.
+All 191 tests across 10 suites must pass before committing.
 
-## Adding Domains
+## Adding Domains (v3)
 
-1. Add signals to `DOMAIN_RULES_V2` in `hooks/enforce-detect.js`
-2. Create `rules/domains/<domain>.md` with severity-tagged rules
-3. Add patterns to `DOMAIN_PATTERNS` in `hooks/enforce-domain-guard.js` (with confidence level)
-4. Add tests in `tests/`
+1. Create `hooks/domains/<domain>.js` exporting `{ domain, patterns, extMap }`
+   - Each pattern: `{ name, regex, risk, confidence, severity, multiline, justification }`
+   - confidence: HIGH|MEDIUM|LOW (detection accuracy)
+   - severity: WARN|STRICT|CRITICAL (enforcement level)
+   - Must have >= 2 HIGH confidence patterns per domain
+2. Add detection signals to `DOMAIN_RULES_V3` in `hooks/enforce-detect.js`
+3. Create `rules/domains/<domain>.md` with `[WARN]`/`[STRICT]`/`[CRITICAL]` tagged rules
+4. Add coverage matrix tests in `tests/`
 
-## PECK v2 Algorithm
+## PECK v3 Algorithm
 
-Confidence-weighted escalation reduces false positives/negatives:
+Confidence-weighted, level-aware escalation with safety mechanisms:
+
+### Core (v2, unchanged)
 - Patterns declare confidence: HIGH (1.0), MEDIUM (0.5), LOW (0.25)
 - Context detection suppresses matches in comments/tests/types (multiplier 0.0)
 - Domain relevance prevents cross-domain false triggers
 - effectiveWeight = confidence × context × domainRelevance
 - Below 0.5 threshold → advisory only, never escalates
 - Above 0.75 → accelerated escalation (skips tier 0)
+
+### v3 Additions
+- **Severity × Level filtering**: WARN enforces at solo+, STRICT at team+, CRITICAL at prod (with team advisory)
+- **Level-aware tier cap**: solo max T0, team max T2 (STRICT)/T1 (CRITICAL), prod max T3
+- **Global safety valve**: 5+ domain circuits open → enforcement paused
+- **Time-based decay**: 5min stale violations decay by 0.5 per tick
+- **Per-pattern-per-file dedup**: one violation per pattern name per file
+- **Cross-domain overlap prevention**: same pattern name skipped if already found
+- **Inline suppression**: `// enforce-ignore` comments suppress nearby patterns
+- **Dynamic budgets**: auto-calculated from patternCount × (1 - avgConfidence) × 2
+- **Modular loading**: patterns from `hooks/domains/*.js`, fallback to built-in
+- **Context domain cap**: max 4 domains in system prompt (budget guarantee)
+
+### Level Matrix
+
+```
+           SOLO          TEAM          PROD
+[WARN]     T0 max        T0 max        T0-T1
+[STRICT]   suppressed    T0-T2         T0-T2
+[CRITICAL] suppressed    T0-T1         T0-T3 (hard block)
+```

@@ -53,8 +53,8 @@ test('DOMAIN_RULES_V2 has 6 new domains', () => {
   assert.ok(names.includes('book-generation'));
 });
 
-test('ALL_DOMAIN_RULES has 11 total domains (5 original + 6 new)', () => {
-  assert.strictEqual(ALL_DOMAIN_RULES.length, 11);
+test('ALL_DOMAIN_RULES has 41 total domains (5 v1 + 6 v2 + 30 v3)', () => {
+  assert.strictEqual(ALL_DOMAIN_RULES.length, 41);
 });
 
 // ── Blockchain detection ──

@@ -104,6 +104,7 @@ const PECK_CONFIG = {
 
   // Per-category budgets (max violations before tier 3 hard-block)
   // v2: split security into secrets (HIGH confidence) vs patterns (MEDIUM)
+  // v3: explicit budgets for known categories + dynamic fallback
   categoryBudgets: {
     // Original categories (backward compatible)
     research: 4,            // generous — LOW-MEDIUM confidence patterns
@@ -113,14 +114,47 @@ const PECK_CONFIG = {
     'security-secrets': 1,  // HIGH confidence only → budget=1 safe
     'security-patterns': 3, // MEDIUM confidence → needs room for FPs
     security: 1,            // legacy fallback (deprecated, use split categories)
-    // New domain categories
+    // v2 domain categories
     blockchain: 3,          // MEDIUM-HIGH for Solidity patterns
     frontend: 4,            // MEDIUM patterns, many legitimate exceptions
     mobile: 3,              // MEDIUM patterns
     'research-paper': 5,    // LOW confidence, high FP risk → very generous
     training: 3,            // MEDIUM confidence
     book: 5,                // LOW confidence → advisory-heavy
+    // v3 domain categories — explicit where needed
+    'auth': 2,              // HIGH confidence, security-critical
+    'observability': 4,     // MEDIUM confidence, many edge cases
+    'database': 3,          // MEDIUM-HIGH confidence
+    'payment': 2,           // HIGH confidence, financial risk
+    'background-jobs': 3,   // MEDIUM confidence
+    'privacy': 2,           // HIGH confidence, regulatory
+    'llm-safety': 3,        // MEDIUM confidence, emerging patterns
+    'accessibility': 5,     // MEDIUM-LOW confidence, many edge cases
+    'seo': 4,               // MEDIUM confidence
+    'multi-tenancy': 2,     // HIGH confidence, data isolation critical
+    'supply-chain': 3,      // MEDIUM confidence
+    'error-handling': 4,    // MEDIUM confidence, many legitimate patterns
+    'resilience': 3,        // MEDIUM confidence
+    'cicd-security': 3,     // MEDIUM confidence
+    'container-security': 3,// MEDIUM-HIGH confidence
+    'graphql': 3,           // MEDIUM confidence
+    'licensing': 3,         // MEDIUM confidence
   },
+
+  // v3: Level-aware severity → max PECK tier mapping
+  // -1 = suppressed (pattern skipped entirely at this level)
+  levelMaxTier: {
+    solo:  { WARN: 0, STRICT: -1, CRITICAL: -1 },
+    team:  { WARN: 0, STRICT: 2,  CRITICAL: 1 },
+    prod:  { WARN: 1, STRICT: 2,  CRITICAL: 3 },
+  },
+
+  // v3: Global safety valve — max simultaneous open circuits
+  maxOpenCircuits: 5,
+
+  // v3: Time-based violation decay (ms since last violation in category)
+  staleViolationAge: 300000,   // 5 minutes
+  staleViolationDecay: 0.5,    // decay amount per tick when stale
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -610,8 +644,69 @@ function peckTick(sessionId) {
     circuitRecordFailure(state, exp.category);
   }
 
+  // v3: Time-based violation decay for stale categories
+  const now = Date.now();
+  for (const [cat, violation] of Object.entries(state.peck.violations)) {
+    if (violation.count <= 0) continue;
+    // Find most recent fingerprint for this category
+    let lastSeen = 0;
+    for (const fp of Object.values(state.peck.fingerprints)) {
+      if (fp.category === cat && fp.lastSeen > lastSeen) {
+        lastSeen = fp.lastSeen;
+      }
+    }
+    if (lastSeen > 0 && (now - lastSeen) > PECK_CONFIG.staleViolationAge) {
+      violation.count = Math.max(0, violation.count - PECK_CONFIG.staleViolationDecay);
+      violation.tier = computeTier(violation.count, cat);
+    }
+  }
+
   writeState(sessionId, state);
   return expired;
+}
+
+/**
+ * v3: Check if global safety valve is tripped.
+ * Returns true if too many domain circuits are open simultaneously.
+ */
+function isGlobalSafetyValveOpen(state) {
+  const openCount = Object.values(state.peck.circuits)
+    .filter(c => c.state === 'OPEN').length;
+  return openCount >= PECK_CONFIG.maxOpenCircuits;
+}
+
+/**
+ * v3: Compute dynamic budget for a category based on its patterns.
+ * Falls back to explicit budget if defined, otherwise calculates from patterns.
+ *
+ * @param {string} category
+ * @param {Array} [patterns] - patterns for this domain (optional)
+ * @returns {number} budget
+ */
+function computeDynamicBudget(category, patterns) {
+  // Explicit budget takes priority
+  if (PECK_CONFIG.categoryBudgets[category] !== undefined) {
+    return PECK_CONFIG.categoryBudgets[category];
+  }
+  // Dynamic: budget = max(2, ceil(patternCount × (1 - avgConfidence) × 2))
+  if (patterns && patterns.length > 0) {
+    const avgConf = patterns.reduce((sum, p) => {
+      return sum + (PECK_CONFIG.confidence[p.confidence] || 0.5);
+    }, 0) / patterns.length;
+    return Math.max(2, Math.ceil(patterns.length * (1 - avgConf) * 2));
+  }
+  return 3; // default fallback
+}
+
+/**
+ * v3: Get max allowed tier for a severity level at a given enforcement level.
+ * Returns -1 if the severity should be suppressed entirely at this level.
+ */
+function getMaxTierForLevel(level, severity) {
+  const levelMap = PECK_CONFIG.levelMaxTier[level];
+  if (!levelMap) return 3; // unknown level → no cap
+  const maxTier = levelMap[severity];
+  return maxTier !== undefined ? maxTier : 3; // unknown severity → no cap
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -769,7 +864,24 @@ function peckEvaluateV2(sessionId, category, filePath, reason, opts = {}) {
     matchIndex = -1,
     domainActive = true,
     patternName = '',
+    severity = 'STRICT',     // v3: WARN|STRICT|CRITICAL
+    level = 'prod',          // v3: current enforcement level
   } = opts;
+
+  // v3: Level-aware severity filtering
+  const maxTierForLevel = getMaxTierForLevel(level, severity);
+  if (maxTierForLevel < 0) {
+    // Severity suppressed at this level
+    return {
+      tier: 0,
+      action: 'approve_context',
+      tierName: 'suppressed',
+      message: '',
+      violationCount: 0,
+      effectiveWeight: 0,
+      suppressed: true,
+    };
+  }
 
   // ── 1. Compute effective weight ──
   const confidenceValue = PECK_CONFIG.confidence[confidence] || PECK_CONFIG.confidence.MEDIUM;
@@ -824,6 +936,21 @@ function peckEvaluateV2(sessionId, category, filePath, reason, opts = {}) {
 
   const state = readState(sessionId);
   const fp = peckFingerprint(category, filePath);
+
+  // v3: Global safety valve — too many circuits open
+  if (isGlobalSafetyValveOpen(state)) {
+    return {
+      tier: 0,
+      action: 'approve_context',
+      tierName: 'safety_valve',
+      message: '[ENFORCE SAFETY VALVE] ' + PECK_CONFIG.maxOpenCircuits +
+        '+ domain circuits open. Enforcement paused for this session. ' +
+        'Check project configuration — likely misconfigured domain detection.',
+      violationCount: 0,
+      effectiveWeight,
+      suppressed: false,
+    };
+  }
 
   // Circuit breaker (v2: confidence-aware threshold)
   const circuitStatus = checkCircuit(state, category);
@@ -889,6 +1016,8 @@ function peckEvaluateV2(sessionId, category, filePath, reason, opts = {}) {
   } else {
     tier = computeTier(violation.count, category);
   }
+  // v3: Cap tier by level-aware severity limit
+  tier = Math.min(tier, maxTierForLevel);
   violation.tier = tier;
   const tierInfo = PECK_CONFIG.tiers[tier];
 
@@ -1039,4 +1168,9 @@ module.exports = {
   isCommentLine,
   isTypeDefinition,
   isInsideTryCatch,
+
+  // PECK v3 — level-aware + scaled
+  isGlobalSafetyValveOpen,
+  computeDynamicBudget,
+  getMaxTierForLevel,
 };

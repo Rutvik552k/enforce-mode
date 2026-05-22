@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/Tests-243%20passing-brightgreen.svg" alt="Tests: 243 passing"/></a>
+  <a href="#testing"><img src="https://img.shields.io/badge/Tests-270%20passing-brightgreen.svg" alt="Tests: 270 passing"/></a>
   <a href="#architecture"><img src="https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg" alt="Node.js"/></a>
   <a href="#installation"><img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg" alt="Platform"/></a>
 </p>
@@ -13,7 +13,7 @@
 
 > Think of it as ESLint for AI-assisted engineering — always on, context-aware, graduated enforcement.
 
-enforce-mode injects engineering best practices into every Claude Code session. Universal rules (research-first, git discipline, test-before-ship) are always active. Domain-specific rules for **11 domains** (ML inference, GPU hardware, video pipelines, API security, cost tracking, blockchain, frontend, mobile, research papers, model training, book generation) activate automatically based on what your project contains — detected via weighted signal scoring.
+enforce-mode injects engineering best practices into every Claude Code session. Universal rules (research-first, git discipline, test-before-ship) are always active. Domain-specific rules for **41 domains** across 12 lifecycle phases activate automatically based on what your project contains — detected via weighted signal scoring.
 
 ### Without vs. With enforce-mode
 
@@ -21,7 +21,7 @@ enforce-mode injects engineering best practices into every Claude Code session. 
   <img src="images/before-after.png" alt="Before and after enforce-mode" width="100%"/>
 </p>
 
-**v6 introduces PECK v2** — Confidence-Weighted Progressive Escalation with context-aware suppression. Builds on v5's circuit breaker and K-step recovery with per-pattern confidence scoring (HIGH/MEDIUM/LOW), contextual suppression (comments/tests/types automatically exempt), and domain-relevance gating. Result: **~60-70% fewer false positives, ~65-75% fewer false negatives** vs v5.
+**v3.0.2 introduces PECK v3** — Level-aware enforcement with modular domain architecture. Builds on v2's confidence weighting with per-pattern severity (WARN/STRICT/CRITICAL) mapped to enforcement levels (solo/team/prod), global safety valve (5+ circuit trips → pause), time-based violation decay, per-pattern-per-file deduplication, inline suppression comments, and 30 new domains covering auth, observability, databases, payments, privacy, LLM safety, accessibility, SEO, containers, GraphQL, and more.
 
 **Zero npm dependencies. Pure Node.js stdlib. < 10ms startup.**
 
@@ -183,7 +183,7 @@ Three graduated levels control rule strictness:
 
 **P**rogressive **E**scalation with **C**ircuit-breaker and **K**-step recovery.
 
-The core enforcement engine (v5) that prevents both deadlocks and evasion. Five interlocking mechanisms:
+The core enforcement engine that prevents both deadlocks and evasion. Now at **v3** with level-aware severity, modular domains, and safety mechanisms:
 
 <p align="center">
   <img src="images/peck-escalation.png" alt="PECK escalation tiers — advisory to hard block" width="100%"/>
@@ -243,6 +243,32 @@ effectiveWeight = patternConfidence × contextMultiplier × domainRelevance
 | Security-sensitive file | 1.5 | Extra scrutiny on auth.js |
 
 LOW confidence patterns **cannot** open the circuit breaker or escalate beyond tier 0.
+
+### PECK v3: Level-Aware Severity
+
+Each pattern now declares both **confidence** (detection accuracy) and **severity** (enforcement level):
+
+```
+           SOLO          TEAM          PROD
+[WARN]     T0 max        T0 max        T0-T1
+[STRICT]   suppressed    T0-T2         T0-T2
+[CRITICAL] suppressed    T0-T1         T0-T3 (hard block)
+```
+
+**Solo developers** only see advisory WARN patterns — no blocks, no friction. **Teams** get STRICT enforcement (can deny writes). **Production** gets the full stack including hard blocks on CRITICAL violations.
+
+### PECK v3: Safety Mechanisms
+
+| Mechanism | What It Does |
+|-----------|-------------|
+| **Global safety valve** | 5+ domain circuits open simultaneously → enforcement paused for session |
+| **Time-based decay** | Violations older than 5 minutes decay by 0.5 per tick — prevents stale blocks |
+| **Per-pattern-per-file dedup** | Same pattern fires only once per file — prevents flood from repeated patterns |
+| **Cross-domain overlap** | Same pattern name across domains → first match wins, duplicates skipped |
+| **Inline suppression** | `// enforce-ignore` comment suppresses nearby pattern matches |
+| **Dynamic budgets** | New domains auto-calculate budget: `max(2, ceil(patterns × (1-avgConf) × 2))` |
+| **Context domain cap** | Max 4 domains in system prompt — guarantees 8KB budget |
+| **Modular loading** | Patterns loaded from `hooks/domains/*.js` — community-extensible |
 
 ### Semantic Fingerprinting
 
@@ -379,9 +405,9 @@ Domains activate via **weighted signal scoring**. Each signal type has a weight;
   <img src="images/domain-detection.png" alt="Domain detection — weighted signal scoring visualization" width="100%"/>
 </p>
 
-### Supported Domains (11)
+### Supported Domains (41)
 
-#### Original Domains (v1)
+#### Original Domains (v1 — 5 domains)
 
 | Domain | Key Signals (weight) | Threshold | What It Enforces |
 |--------|---------------------|-----------|------------------|
@@ -391,7 +417,7 @@ Domains activate via **weighted signal scoring**. Each signal type has a weight;
 | **api-security** | fastapi (2), express (2), django (2), Dockerfile (2), k8s/ (2) | 3 | Auth on endpoints, rate limiting, input validation, prompt injection defense |
 | **cost-tracking** | boto3 (2), google-cloud (2), terraform/ (3), .tf files (2) | 3 | Cost reporting, budget guards, instance awareness, egress costs |
 
-#### New Domains (v2 — PECK v2 confidence-weighted)
+#### v2 Domains (6 domains — PECK v2 confidence-weighted)
 
 | Domain | Key Signals (weight) | Threshold | What It Enforces |
 |--------|---------------------|-----------|------------------|
@@ -402,7 +428,42 @@ Domains activate via **weighted signal scoring**. Each signal type has a weight;
 | **model-training** | wandb (3), peft (3), deepspeed (3), lightning (3), checkpoints/ (2) | 4 | LR validation, data splits, checkpointing, gradient health, eval protocol |
 | **book-generation** | SUMMARY.md (3), book.toml (3), chapters/ (3), _toc.yml (3) | 2 | TOC sync, cross-refs, heading hierarchy, code examples tested, versioning |
 
-Multiple domains activate simultaneously. A video ML project with a FastAPI backend gets: `ml-inference` + `video-pipeline` + `api-security`. A Next.js DApp gets: `frontend` + `blockchain`.
+#### v3 Domains (30 domains — PECK v3 level-aware, modular)
+
+| Domain | Threshold | What It Enforces |
+|--------|-----------|------------------|
+| **auth** | 2 | JWT expiry, CSRF, PKCE, password hashing, session invalidation, wildcard permissions |
+| **observability** | 3 | Structured logging, correlation IDs, SLIs/SLOs, health checks, no PII in logs |
+| **database** | 2 | SQL injection, N+1 queries, parameterized queries, migrations, backups |
+| **payment** | 3 | Integer cents, idempotency keys, webhook verification, no PAN in logs, tokenization |
+| **background-jobs** | 3 | Idempotent handlers, dead letter queues, timeouts, exponential backoff |
+| **privacy** | 3 | PII detection in logs, consent gates, encryption, right-to-erasure |
+| **llm-safety** | 2 | Prompt injection, LLM output in SQL/shell, token budgets, content filtering |
+| **accessibility** | 2 | Form labels, focus indicators, ARIA roles, color contrast, keyboard navigation |
+| **seo** | 2 | Meta tags, Open Graph, canonical URLs, structured data, lazy loading |
+| **multi-tenancy** | 3 | Tenant filter in queries, auth context for tenant ID, cross-tenant isolation |
+| **supply-chain** | 2 | Unpinned GitHub Actions, Docker `:latest` tags, SBOM generation |
+| **error-handling** | 2 | Empty catch blocks, unhandled promises, stack traces to users |
+| **resilience** | 3 | External call timeouts, circuit breakers, exponential backoff with jitter |
+| **cicd-security** | 2 | Secrets in CI config, SAST/SCA in pipeline, branch protection |
+| **container-security** | 2 | No root, `:latest` tags, privileged mode, resource limits, CVE scanning |
+| **graphql** | 3 | Introspection in prod, depth limiting, N+1 via DataLoader |
+| **licensing** | 2 | GPL dependency detection, SBOM, copyleft contamination |
+| **logging** | 2 | Unstructured logs, secrets in logs, correlation IDs |
+| **config-management** | 2 | Hardcoded config values, startup validation, secure defaults |
+| **feature-flags** | 3 | Flag cleanup/expiry, security gating via flags |
+| **i18n** | 3 | String concatenation for i18n, hardcoded date formats |
+| **iac** | 3 | Hardcoded AMIs, state files committed, missing resource tags |
+| **iac-security** | 3 | Wildcard IAM, open ingress (0.0.0.0/0), public storage, missing encryption |
+| **microservices** | 3 | Distributed transactions without saga, synchronous chain calls |
+| **design-tokens** | 2 | Hardcoded hex colors, magic spacing numbers |
+| **api-design** | 2 | Missing pagination, OpenAPI spec validation |
+| **migration** | 2 | Migrations without rollback, DROP without backup plan |
+| **caching** | 3 | PII in cache, missing TTL, cache stampede prevention |
+| **dependency-mgmt** | 1 | Unpinned dependencies, `npm install` vs `npm ci` in CI |
+| **testing** | 2 | Mocked external services in integration tests, tests without assertions |
+
+Multiple domains activate simultaneously. A video ML project with a FastAPI backend gets: `ml-inference` + `video-pipeline` + `api-security`. A Next.js DApp gets: `frontend` + `blockchain`. A SaaS app gets: `auth` + `database` + `multi-tenancy` + `payment`.
 
 ### Signal Weights
 
@@ -476,30 +537,43 @@ The `/enforce` command now saves the level to both the config file and plugin se
 
 ## Adding Custom Domains
 
-**Step 1.** Add detection rules to `hooks/enforce-detect.js` in the `DOMAIN_RULES` array:
+**Step 1.** Create a pattern file at `hooks/domains/my-domain.js`:
+
+```javascript
+'use strict';
+module.exports = {
+  domain: 'my-domain',
+  patterns: [
+    {
+      name: 'Dangerous pattern detected',
+      regex: /dangerousCall\s*\(/,
+      risk: 'Description of why this is dangerous.',
+      confidence: 'HIGH',     // HIGH|MEDIUM|LOW — detection accuracy
+      severity: 'STRICT',     // WARN|STRICT|CRITICAL — when to enforce
+      multiline: false,
+      justification: ['safe', 'reviewed', 'intentional'],
+    },
+  ],
+  extMap: { '.xyz': 'my-domain' },  // file extension mapping (optional)
+};
+```
+
+**Step 2.** Add detection rules to `DOMAIN_RULES_V3` in `hooks/enforce-detect.js`:
 
 ```javascript
 {
   domain: 'my-domain',
   threshold: 3,
   signals: {
-    deps: [
-      { name: 'my-library', weight: 3 }
-    ],
-    files: [
-      { ext: '.xyz', weight: 2 }
-    ],
-    dirs: [
-      { name: 'my-dir', weight: 1 }
-    ],
-    markers: [
-      { name: 'my-config.json', weight: 2 }
-    ]
+    deps: [{ name: 'my-library', weight: 3 }],
+    files: [{ ext: '.xyz', weight: 2 }],
+    dirs: [{ name: 'my-dir', weight: 1 }],
+    markers: [{ name: 'my-config.json', weight: 2 }]
   }
 }
 ```
 
-**Step 2.** Create a rule file at `rules/domains/my-domain.md`:
+**Step 3.** Create a rule file at `rules/domains/my-domain.md`:
 
 ```markdown
 ## My Domain Rules
@@ -509,7 +583,7 @@ The `/enforce` command now saves the level to both the config file and plugin se
 - [CRITICAL] Rule at prod level only
 ```
 
-**Step 3.** Done. The rule engine picks it up automatically.
+**Step 4.** Done. The modular loader picks up patterns automatically. Detection rules activate the domain per project.
 
 ---
 
@@ -531,10 +605,21 @@ enforce-mode/
 |   +-- enforce-detect.js        # Weighted signal scoring for domain detection
 |   +-- enforce-rules.js         # Rule registry + context budget manager
 |   +-- enforce-compress.js      # Deterministic text compression for rules
-|   +-- enforce-state.js         # PECK v1+v2 engine + cross-hook state + per-session isolation
+|   +-- enforce-state.js         # PECK v1+v2+v3 engine + cross-hook state + per-session isolation
 |   +-- enforce-write-guard.js   # PreToolUse — secrets (exit 2) + research/security (PECK)
 |   +-- enforce-dsa-guard.js     # PreToolUse — DSA complexity (PECK) + cross-hook coordination
-|   +-- enforce-domain-guard.js  # PreToolUse — 6 new domains (PECK v2, 30 confidence-weighted patterns)
+|   +-- enforce-domain-guard.js  # PreToolUse — 36 domains (PECK v3, 106 patterns, modular loading)
+|   +-- domains/                 # v3: Modular domain pattern files (30 files, 83 patterns)
+|   |   +-- auth.js              +-- observability.js    +-- database.js
+|   |   +-- payment.js           +-- background-jobs.js  +-- privacy.js
+|   |   +-- llm-safety.js        +-- accessibility.js    +-- seo.js
+|   |   +-- multi-tenancy.js     +-- supply-chain.js     +-- error-handling.js
+|   |   +-- resilience.js        +-- cicd-security.js    +-- container-security.js
+|   |   +-- graphql.js           +-- licensing.js        +-- logging.js
+|   |   +-- config-management.js +-- feature-flags.js    +-- i18n.js
+|   |   +-- iac.js               +-- iac-security.js     +-- microservices.js
+|   |   +-- design-tokens.js     +-- api-design.js       +-- migration.js
+|   |   +-- caching.js           +-- dependency-mgmt.js  +-- testing.js
 |   +-- enforce-bash-guard.js    # PreToolUse — git/inference/sleep (exit 2) + test (PECK) + cost
 |   +-- enforce-stop-guard.js    # Stop — Phase 2 accountability + PECK dead letters + summary
 |   +-- enforce-research-gate.js # PreToolUse — research check (v1 legacy)
@@ -560,6 +645,7 @@ enforce-mode/
 |       +-- research-paper.md    # Academic paper rules (v2)
 |       +-- model-training.md    # ML training rules (v2)
 |       +-- book-generation.md   # Book/docs generation rules (v2)
+|       +-- auth.md ... (30 more v3 domain rule files)
 |
 +-- skills/
 |   +-- enforce/
@@ -578,6 +664,7 @@ enforce-mode/
 |   +-- test-peck-v2.js          # 35 tests — PECK v2 confidence, context, domain relevance
 |   +-- test-detect-v2.js        # 11 tests — 6 new domain detection + cross-domain
 |   +-- test-domain-guard.js     # 20 tests — domain patterns, justification, true negatives
+|   +-- test-peck-v3.js          # 27 tests — PECK v3 level-aware, safety valve, dynamic budgets
 |
 +-- .gitignore
 +-- CLAUDE.md                    # Project instructions for Claude Code
@@ -708,16 +795,17 @@ node tests/test-peck.js      # 28 tests — PECK v1 (escalation, circuit breaker
 node tests/test-peck-v2.js   # 35 tests — PECK v2 (confidence, context, domain relevance)
 node tests/test-detect-v2.js # 11 tests — 6 new domain detection + cross-domain
 node tests/test-domain-guard.js # 20 tests — domain patterns, justification, exemptions
+node tests/test-peck-v3.js      # 27 tests — PECK v3 level-aware, safety valve, modular loading
 node tests/test-benchmark.js    # 79 tests — WITH vs WITHOUT benchmark across 7 frameworks
 
-# Run all 243 tests
+# Run all 270 tests
 node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && \
 node tests/test-compress.js && node tests/test-deadlocks.js && node tests/test-peck.js && \
 node tests/test-peck-v2.js && node tests/test-detect-v2.js && node tests/test-domain-guard.js && \
-node tests/test-benchmark.js
+node tests/test-peck-v3.js && node tests/test-benchmark.js
 ```
 
-Tests create temporary project directories with mock dependencies to verify detection accuracy. PECK v2 tests verify confidence-weighted escalation, context suppression (comments/tests/types), domain relevance gating, split security categories, semantic retry detection, LOW-confidence circuit breaker bypass, and weighted compliance decay. Benchmark tests map enforce-mode against 7 existing plugin evaluation frameworks (battle, PluginEval, verdict, harness-eval, cc-plugin-eval) and measure enforcement-specific metrics. All 243 tests pass on Node.js 18+.
+Tests create temporary project directories with mock dependencies to verify detection accuracy. PECK v3 tests verify level-aware severity filtering (WARN/STRICT/CRITICAL × solo/team/prod), global safety valve, dynamic budget calculation, modular domain loading, and all 41 domain rule files. PECK v2 tests verify confidence-weighted escalation, context suppression (comments/tests/types), domain relevance gating, split security categories, semantic retry detection, LOW-confidence circuit breaker bypass, and weighted compliance decay. Benchmark tests map enforce-mode against 7 existing plugin evaluation frameworks. All 270 tests pass on Node.js 18+.
 
 ---
 
@@ -808,11 +896,12 @@ Both can run simultaneously. Caveman compresses *how* Claude talks; enforce-mode
 
 1. Fork the repo
 2. Create a feature branch (`git checkout -b feature/my-domain`)
-3. Add detection rules in `hooks/enforce-detect.js`
-4. Add domain rules in `rules/domains/my-domain.md`
-5. Write tests in `tests/`
-6. Run all tests: `node tests/test-config.js && node tests/test-detect.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-deadlocks.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-detect-v2.js && node tests/test-domain-guard.js`
-7. Submit a PR
+3. Create pattern file in `hooks/domains/my-domain.js` (with confidence + severity)
+4. Add detection rules in `hooks/enforce-detect.js` (DOMAIN_RULES_V3)
+5. Add domain rules in `rules/domains/my-domain.md` (with [WARN]/[STRICT]/[CRITICAL] tags)
+6. Write tests in `tests/`
+7. Run all tests: `node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js`
+8. Submit a PR
 
 ---
 

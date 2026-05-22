@@ -316,8 +316,8 @@ function detectDomains(projectDir, useAllRules = true) {
 
   const results = [];
 
-  // Use all rules (v1 + v2) by default, legacy mode uses v1 only
-  const ruleset = useAllRules ? [...DOMAIN_RULES, ...DOMAIN_RULES_V2] : DOMAIN_RULES;
+  // Use all rules (v1 + v2 + v3) by default, legacy mode uses v1 only
+  const ruleset = useAllRules ? ALL_DOMAIN_RULES : DOMAIN_RULES;
 
   for (const rule of ruleset) {
     let score = 0;
@@ -600,13 +600,578 @@ const DOMAIN_RULES_V2 = [
   },
 ];
 
-// Merge v2 domains into main DOMAIN_RULES array
-const ALL_DOMAIN_RULES = [...DOMAIN_RULES, ...DOMAIN_RULES_V2];
+// ---------------------------------------------------------------------------
+// PECK v3: 30 new domain detection rules (auth, observability, database,
+// payment, background-jobs, privacy, llm-safety, accessibility, seo,
+// multi-tenancy, supply-chain, error-handling, resilience, cicd-security,
+// container-security, graphql, licensing, logging, config-management,
+// feature-flags, i18n, iac, iac-security, microservices, design-tokens,
+// api-design, migration, caching, dependency-mgmt, testing)
+// ---------------------------------------------------------------------------
+
+const DOMAIN_RULES_V3 = [
+  {
+    domain: 'auth',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'passport', weight: 3 },
+        { name: 'next-auth', weight: 3 },
+        { name: '@auth/', weight: 3 },
+        { name: 'jsonwebtoken', weight: 2 },
+        { name: 'bcrypt', weight: 2 },
+        { name: 'express-session', weight: 2 },
+        { name: 'oauth', weight: 2 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'auth.js', weight: 2 },
+        { name: 'auth.ts', weight: 2 },
+        { name: 'middleware.js', weight: 1 },
+      ]
+    }
+  },
+  {
+    domain: 'observability',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'winston', weight: 2 },
+        { name: 'pino', weight: 2 },
+        { name: '@opentelemetry/', weight: 3 },
+        { name: 'datadog', weight: 3 },
+        { name: 'newrelic', weight: 3 },
+        { name: 'prometheus', weight: 2 },
+        { name: 'grafana', weight: 2 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'logger.js', weight: 2 },
+        { name: 'tracing.js', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'database',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'prisma', weight: 3 },
+        { name: 'sequelize', weight: 3 },
+        { name: 'typeorm', weight: 3 },
+        { name: 'knex', weight: 2 },
+        { name: 'mongoose', weight: 3 },
+        { name: 'pg', weight: 2 },
+        { name: 'mysql2', weight: 2 },
+        { name: 'drizzle', weight: 3 },
+      ],
+      files: [
+        { ext: '.sql', weight: 2 },
+      ],
+      dirs: [
+        { name: 'migrations', weight: 2 },
+        { name: 'seeds', weight: 1 },
+      ],
+      markers: [
+        { name: 'schema.prisma', weight: 3 },
+      ]
+    }
+  },
+  {
+    domain: 'payment',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'stripe', weight: 3 },
+        { name: '@stripe/', weight: 3 },
+        { name: 'braintree', weight: 3 },
+        { name: 'paypal', weight: 3 },
+        { name: 'square', weight: 2 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'checkout.js', weight: 2 },
+        { name: 'payment.js', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'background-jobs',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'bull', weight: 3 },
+        { name: 'bullmq', weight: 3 },
+        { name: 'agenda', weight: 3 },
+        { name: 'celery', weight: 3 },
+        { name: 'sidekiq', weight: 3 },
+        { name: 'bee-queue', weight: 2 },
+        { name: 'temporal', weight: 3 },
+      ],
+      files: [],
+      dirs: [
+        { name: 'jobs', weight: 2 },
+        { name: 'workers', weight: 2 },
+        { name: 'queues', weight: 2 },
+      ],
+      markers: []
+    }
+  },
+  {
+    domain: 'privacy',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'cookie-consent', weight: 2 },
+        { name: 'gdpr', weight: 2 },
+      ],
+      files: [],
+      dirs: [
+        { name: 'compliance', weight: 2 },
+      ],
+      markers: [
+        { name: 'privacy-policy', weight: 1 },
+      ]
+    }
+  },
+  {
+    domain: 'llm-safety',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'openai', weight: 3 },
+        { name: '@anthropic', weight: 3 },
+        { name: 'langchain', weight: 3 },
+        { name: 'llamaindex', weight: 3 },
+        { name: 'ai', weight: 2 },
+        { name: '@ai-sdk', weight: 3 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'prompts/', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'accessibility',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: '@axe-core/', weight: 3 },
+        { name: 'jest-axe', weight: 3 },
+        { name: 'pa11y', weight: 3 },
+        { name: '@testing-library', weight: 2 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: '.a11yrc', weight: 2 },
+        { name: 'a11y.config', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'seo',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'next-seo', weight: 3 },
+        { name: 'react-helmet', weight: 2 },
+        { name: 'next-sitemap', weight: 2 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'sitemap.xml', weight: 3 },
+        { name: 'robots.txt', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'multi-tenancy',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: '@casl/', weight: 2 },
+      ],
+      files: [],
+      dirs: [
+        { name: 'tenants', weight: 3 },
+      ],
+      markers: [
+        { name: 'tenant.js', weight: 2 },
+        { name: 'tenancy.js', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'supply-chain',
+    threshold: 2,
+    signals: {
+      deps: [],
+      files: [
+        { ext: '.lock', weight: 1 },
+      ],
+      dirs: [],
+      markers: [
+        { name: '.github/workflows', weight: 2 },
+        { name: '.github/dependabot.yml', weight: 3 },
+        { name: '.snyk', weight: 3 },
+        { name: '.npmrc', weight: 1 },
+      ]
+    }
+  },
+  {
+    domain: 'error-handling',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'express', weight: 1 },
+        { name: '@sentry/', weight: 3 },
+        { name: 'bugsnag', weight: 3 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'error-handler.js', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'resilience',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'opossum', weight: 3 },
+        { name: 'cockatiel', weight: 3 },
+        { name: 'polly', weight: 2 },
+        { name: 'resilience4j', weight: 3 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'circuit-breaker', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'cicd-security',
+    threshold: 2,
+    signals: {
+      deps: [],
+      files: [],
+      dirs: [
+        { name: '.github', weight: 1 },
+      ],
+      markers: [
+        { name: '.github/workflows', weight: 2 },
+        { name: 'Jenkinsfile', weight: 2 },
+        { name: '.gitlab-ci.yml', weight: 2 },
+        { name: '.circleci', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'container-security',
+    threshold: 2,
+    signals: {
+      deps: [],
+      files: [
+        { ext: '.dockerfile', weight: 2 },
+      ],
+      dirs: [
+        { name: 'k8s', weight: 2 },
+        { name: 'kubernetes', weight: 2 },
+      ],
+      markers: [
+        { name: 'Dockerfile', weight: 3 },
+        { name: 'docker-compose.yml', weight: 2 },
+        { name: 'docker-compose.yaml', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'graphql',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'graphql', weight: 3 },
+        { name: 'apollo-server', weight: 3 },
+        { name: '@apollo/', weight: 3 },
+        { name: 'type-graphql', weight: 3 },
+        { name: 'nexus', weight: 2 },
+      ],
+      files: [
+        { ext: '.graphql', weight: 3 },
+        { ext: '.gql', weight: 3 },
+      ],
+      dirs: [],
+      markers: [
+        { name: 'schema.graphql', weight: 3 },
+      ]
+    }
+  },
+  {
+    domain: 'licensing',
+    threshold: 2,
+    signals: {
+      deps: [],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'LICENSE', weight: 2 },
+        { name: 'LICENSE.md', weight: 2 },
+        { name: 'NOTICE', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'logging',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'winston', weight: 3 },
+        { name: 'pino', weight: 3 },
+        { name: 'bunyan', weight: 2 },
+        { name: 'log4js', weight: 2 },
+        { name: 'morgan', weight: 2 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'logger.js', weight: 2 },
+        { name: 'logging.js', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'config-management',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'dotenv', weight: 2 },
+        { name: 'convict', weight: 3 },
+        { name: 'config', weight: 2 },
+        { name: 'nconf', weight: 2 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: '.env.example', weight: 2 },
+        { name: 'config.js', weight: 1 },
+      ]
+    }
+  },
+  {
+    domain: 'feature-flags',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'launchdarkly', weight: 3 },
+        { name: '@unleash/', weight: 3 },
+        { name: 'growthbook', weight: 3 },
+        { name: 'flagsmith', weight: 3 },
+        { name: 'statsig', weight: 3 },
+      ],
+      files: [],
+      dirs: [],
+      markers: []
+    }
+  },
+  {
+    domain: 'i18n',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'i18next', weight: 3 },
+        { name: 'react-intl', weight: 3 },
+        { name: '@formatjs/', weight: 3 },
+        { name: 'vue-i18n', weight: 3 },
+        { name: 'lingui', weight: 3 },
+      ],
+      files: [],
+      dirs: [
+        { name: 'locales', weight: 2 },
+        { name: 'translations', weight: 2 },
+      ],
+      markers: []
+    }
+  },
+  {
+    domain: 'iac',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'pulumi', weight: 3 },
+        { name: 'cdk', weight: 3 },
+      ],
+      files: [
+        { ext: '.tf', weight: 3 },
+      ],
+      dirs: [
+        { name: 'terraform', weight: 3 },
+        { name: 'pulumi', weight: 2 },
+        { name: 'cdk', weight: 2 },
+      ],
+      markers: []
+    }
+  },
+  {
+    domain: 'iac-security',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'pulumi', weight: 3 },
+        { name: 'cdk', weight: 3 },
+      ],
+      files: [
+        { ext: '.tf', weight: 3 },
+      ],
+      dirs: [
+        { name: 'terraform', weight: 3 },
+        { name: 'pulumi', weight: 2 },
+        { name: 'cdk', weight: 2 },
+      ],
+      markers: [
+        { name: 'checkov.yml', weight: 3 },
+        { name: 'tfsec.yml', weight: 3 },
+      ]
+    }
+  },
+  {
+    domain: 'microservices',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: '@grpc/', weight: 3 },
+        { name: 'protobuf', weight: 2 },
+      ],
+      files: [],
+      dirs: [
+        { name: 'services', weight: 2 },
+        { name: 'gateway', weight: 2 },
+        { name: 'api-gateway', weight: 2 },
+      ],
+      markers: [
+        { name: 'docker-compose.yml', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'design-tokens',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: '@tokens-studio', weight: 3 },
+        { name: 'style-dictionary', weight: 3 },
+        { name: 'tailwindcss', weight: 1 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'tokens.json', weight: 3 },
+        { name: 'design-tokens.json', weight: 3 },
+      ]
+    }
+  },
+  {
+    domain: 'api-design',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'swagger-ui', weight: 2 },
+        { name: '@nestjs/swagger', weight: 3 },
+      ],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'openapi.yaml', weight: 3 },
+        { name: 'swagger.json', weight: 3 },
+        { name: 'openapi.json', weight: 3 },
+      ]
+    }
+  },
+  {
+    domain: 'migration',
+    threshold: 2,
+    signals: {
+      deps: [],
+      files: [],
+      dirs: [
+        { name: 'migrations', weight: 3 },
+        { name: 'db/migrate', weight: 3 },
+      ],
+      markers: [
+        { name: 'knexfile.js', weight: 2 },
+        { name: 'ormconfig.js', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'caching',
+    threshold: 3,
+    signals: {
+      deps: [
+        { name: 'redis', weight: 3 },
+        { name: 'ioredis', weight: 3 },
+        { name: 'memcached', weight: 2 },
+        { name: 'keyv', weight: 2 },
+        { name: '@neshca/cache-handler', weight: 3 },
+      ],
+      files: [],
+      dirs: [],
+      markers: []
+    }
+  },
+  {
+    domain: 'dependency-mgmt',
+    threshold: 1,
+    signals: {
+      deps: [],
+      files: [],
+      dirs: [],
+      markers: [
+        { name: 'package-lock.json', weight: 2 },
+        { name: 'yarn.lock', weight: 2 },
+        { name: 'pnpm-lock.yaml', weight: 2 },
+        { name: 'Pipfile.lock', weight: 2 },
+      ]
+    }
+  },
+  {
+    domain: 'testing',
+    threshold: 2,
+    signals: {
+      deps: [
+        { name: 'jest', weight: 2 },
+        { name: 'mocha', weight: 2 },
+        { name: 'vitest', weight: 3 },
+        { name: '@testing-library', weight: 2 },
+        { name: 'cypress', weight: 3 },
+        { name: 'playwright', weight: 3 },
+      ],
+      files: [],
+      dirs: [
+        { name: '__tests__', weight: 2 },
+        { name: 'e2e', weight: 2 },
+      ],
+      markers: []
+    }
+  },
+];
+
+// Merge v1 + v2 + v3 domains into main ALL_DOMAIN_RULES array
+const ALL_DOMAIN_RULES = [...DOMAIN_RULES, ...DOMAIN_RULES_V2, ...DOMAIN_RULES_V3];
 
 module.exports = {
   detectDomains,
   DOMAIN_RULES,
   DOMAIN_RULES_V2,
+  DOMAIN_RULES_V3,
   ALL_DOMAIN_RULES,
   // Exported for testing
   getPackageJsonDeps,
