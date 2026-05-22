@@ -1,7 +1,7 @@
 {
   "name": "enforce-mode",
   "description": "Always-on universal engineering rules + project-aware domain rules with PECK v2 confidence-weighted enforcement. Detects 11 domains (ML, GPU, video, API security, cost, blockchain, frontend, mobile, research papers, model training, book generation) via weighted signal scoring.",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "author": {
     "name": "Rutvik552k",
     "url": "https://github.com/Rutvik552k"

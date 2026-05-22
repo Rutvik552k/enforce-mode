@@ -1,7 +1,5 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "enforce-mode",
-  "description": "Always-on universal engineering rules + project-aware domain rules with weighted signal scoring.",
   "owner": {
     "name": "Rutvik552k",
     "url": "https://github.com/Rutvik552k"
