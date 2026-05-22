@@ -55,6 +55,22 @@ enforce-mode injects engineering best practices into every Claude Code session. 
 claude plugin install enforce-mode
 ```
 
+### Enable auto-updates (recommended)
+
+By default, third-party plugins do NOT auto-update. Enable it to always get the latest version:
+
+```
+/plugin → Marketplaces tab → select enforce-mode → Enable auto-update
+```
+
+Or manually refresh anytime:
+```
+/plugin marketplace update enforce-mode
+/reload-plugins
+```
+
+With auto-update enabled, Claude Code pulls the latest version at every session start automatically.
+
 ### Or install standalone
 
 **Unix / macOS:**
