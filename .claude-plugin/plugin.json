@@ -1,7 +1,7 @@
 {
   "name": "enforce-mode",
   "description": "Always-on universal engineering rules + project-aware domain rules with PECK v3 level-aware enforcement. Detects 41 domains across 12 lifecycle phases via weighted signal scoring. Modular pattern architecture with per-pattern severity (WARN/STRICT/CRITICAL) mapped to enforcement levels (solo/team/prod).",
-  "version": "3.0.2",
+  "version": "3.1.0",
   "author": {
     "name": "Rutvik552k",
     "url": "https://github.com/Rutvik552k"
@@ -60,6 +60,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-domain-guard.js",
             "timeout": 10,
             "statusMessage": "Checking domain-specific rules..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-skill-loader.js",
+            "timeout": 5,
+            "statusMessage": "Loading relevant skills..."
           }
         ]
       },
@@ -71,6 +77,17 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-bash-guard.js",
             "timeout": 10,
             "statusMessage": "Enforcing bash rules..."
+          }
+        ]
+      },
+      {
+        "matcher": "WebSearch|WebFetch|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-skill-loader.js",
+            "timeout": 5,
+            "statusMessage": "Loading relevant skills..."
           }
         ]
       }

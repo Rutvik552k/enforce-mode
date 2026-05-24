@@ -4,12 +4,13 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 
 ## Structure
 
-- `hooks/` — Core logic (activate, detect, config, rules, tracker) + installers + statusline scripts
+- `hooks/` — Core logic (activate, detect, config, rules, tracker, skill-loader) + installers + statusline scripts
+- `hooks/enforce-skill-loader.js` — PECK-integrated skill loading enforcement (PreToolUse)
 - `hooks/domains/` — Modular domain pattern files (v3: 30 domains, 83 patterns)
 - `rules/` — Rule markdown files: `universal.md` + `domains/*.md` (41 domains)
 - `skills/enforce/SKILL.md` — Source of truth for all rule definitions
 - `commands/enforce.toml` — `/enforce` slash command
-- `tests/` — 191 tests across 10 suites
+- `tests/` — 221 tests across 11 suites
 - `.claude-plugin/` — Plugin manifest for Claude Code marketplace
 
 ## Key Patterns
@@ -25,10 +26,10 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 ## Testing
 
 ```bash
-node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js
+node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js
 ```
 
-All 191 tests across 10 suites must pass before committing.
+All 221 tests across 11 suites must pass before committing.
 
 ## Adding Domains (v3)
 
@@ -64,6 +65,7 @@ Confidence-weighted, level-aware escalation with safety mechanisms:
 - **Dynamic budgets**: auto-calculated from patternCount × (1 - avgConfidence) × 2
 - **Modular loading**: patterns from `hooks/domains/*.js`, fallback to built-in
 - **Context domain cap**: max 4 domains in system prompt (budget guarantee)
+- **Skill loading enforcement**: PECK-integrated skill suggestions (WARN severity, all levels)
 
 ### Level Matrix
 

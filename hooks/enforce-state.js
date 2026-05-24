@@ -139,14 +139,15 @@ const PECK_CONFIG = {
     'container-security': 3,// MEDIUM-HIGH confidence
     'graphql': 3,           // MEDIUM confidence
     'licensing': 3,         // MEDIUM confidence
+    'skill-loading': 4,    // MEDIUM confidence, generous — many legitimate skips
   },
 
   // v3: Level-aware severity → max PECK tier mapping
   // -1 = suppressed (pattern skipped entirely at this level)
   levelMaxTier: {
-    solo:  { WARN: 0, STRICT: -1, CRITICAL: -1 },
-    team:  { WARN: 0, STRICT: 2,  CRITICAL: 1 },
-    prod:  { WARN: 1, STRICT: 2,  CRITICAL: 3 },
+    solo:  { WARN: 0, STRICT: -1, CRITICAL: -1, ALWAYS: 3 },
+    team:  { WARN: 0, STRICT: 2,  CRITICAL: 1,  ALWAYS: 3 },
+    prod:  { WARN: 1, STRICT: 2,  CRITICAL: 3,  ALWAYS: 3 },
   },
 
   // v3: Global safety valve — max simultaneous open circuits
@@ -186,6 +187,8 @@ function readState(sessionId) {
     pending: [],
     researched: [],
     dsaJustified: [],
+    suggestedSkills: [],
+    skillComplianceCount: 0,
     peck: { ...EMPTY_PECK },
   };
   const statePath = getStatePath(sessionId);
@@ -199,6 +202,8 @@ function readState(sessionId) {
       pending: Array.isArray(data.pending) ? data.pending : [],
       researched: Array.isArray(data.researched) ? data.researched : [],
       dsaJustified: Array.isArray(data.dsaJustified) ? data.dsaJustified : [],
+      suggestedSkills: Array.isArray(data.suggestedSkills) ? data.suggestedSkills : [],
+      skillComplianceCount: data.skillComplianceCount || 0,
       peck: {
         violations: data.peck?.violations || {},
         fingerprints: data.peck?.fingerprints || {},
@@ -1130,6 +1135,36 @@ function peckRecordComplianceV2(sessionId, category, filePath, confidence = 'MED
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SKILL-LOADING: SUGGESTED SKILLS TRACKING
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Get list of skills already suggested in this session.
+ * Used for UX dedup — avoid suggesting the same skill repeatedly.
+ */
+function getSuggestedSkills(sessionId) {
+  return readState(sessionId).suggestedSkills;
+}
+
+/**
+ * Record newly suggested skills into session state.
+ * Deduplicates against existing suggestions.
+ */
+function recordSuggestedSkills(sessionId, skills) {
+  if (!sessionId || !skills || skills.length === 0) return;
+  const state = readState(sessionId);
+  const existing = new Set(state.suggestedSkills);
+  let changed = false;
+  for (const skill of skills) {
+    if (!existing.has(skill)) {
+      state.suggestedSkills.push(skill);
+      changed = true;
+    }
+  }
+  if (changed) writeState(sessionId, state);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1173,4 +1208,8 @@ module.exports = {
   isGlobalSafetyValveOpen,
   computeDynamicBudget,
   getMaxTierForLevel,
+
+  // Skill-loading tracking
+  getSuggestedSkills,
+  recordSuggestedSkills,
 };
