@@ -5,7 +5,8 @@
  * ENFORCES: Rule 1 (Research before code) + Rule 6 (Web-research mandate)
  *
  * Logic:
- *   When Claude writes/edits a file that imports external libraries,
+ *   When Claude writes/edits a file containing content that needs verification
+ *   (imports, API calls, SDK usage, external URLs, version refs, cloud services),
  *   check the transcript for prior web research (WebSearch, WebFetch, context7).
  *   If no research found → emit warning as additionalContext (soft gate).
  *   Allows writes to proceed but injects mandatory reminder.
@@ -30,8 +31,11 @@ const RESEARCH_TOOLS = [
   'mcp__plugin_ecc_exa__web_fetch_exa',
 ];
 
-// External library import patterns (language-agnostic)
-const IMPORT_PATTERNS = [
+// Patterns that indicate content needing web-research verification.
+// Broader than just imports — catches API calls, SDK usage, external
+// service configs, version-specific code, and endpoint references.
+const RESEARCH_NEEDED_PATTERNS = [
+  // ── Library imports (original) ──
   // Python
   /^\s*(import|from)\s+\w+/m,
   // JavaScript/TypeScript
@@ -42,6 +46,43 @@ const IMPORT_PATTERNS = [
   /^\s*extern\s+crate/m,
   // Go
   /^\s*import\s+\(/m,
+
+  // ── External API / SDK method calls ──
+  // REST client calls (fetch, axios, http, requests)
+  /\b(fetch|axios|requests|httpx|http\.client)\s*\.\s*(get|post|put|patch|delete)\s*\(/m,
+  /\bfetch\s*\(\s*['"`]/m,
+  // SDK-style chained calls (e.g. client.chat.completions.create)
+  /\b\w+\.\w+\.\w+\.(create|list|get|update|delete|send|execute)\s*\(/m,
+
+  // ── HTTP endpoint URLs in code ──
+  /['"`]https?:\/\/[^'"`\s]{10,}['"`]/m,
+
+  // ── Version-specific references ──
+  // Semver in strings (e.g. "3.12", "v2.1.0", "@^4.0.0")
+  /['"`][@^~]?\d+\.\d+(\.\d+)?['"`]/m,
+  // Package version pinning (e.g. "react": "^18.2.0", version = "0.4")
+  /['"`]\w+['"`]\s*:\s*['"`][\^~>=<]?\d+\.\d+/m,
+
+  // ── External service / cloud provider patterns ──
+  // AWS SDK / config
+  /\b(aws|AWS|s3|S3|dynamodb|DynamoDB|lambda|Lambda|sqs|SQS|sns|SNS)\b.*\.(send|put|get|invoke|publish|create)\s*\(/m,
+  /\bnew\s+(S3Client|DynamoDBClient|LambdaClient|SQSClient|SNSClient)\s*\(/m,
+  // GCP
+  /\b(google\.cloud|storage\.Client|bigquery\.Client|pubsub)\b/m,
+  // Azure
+  /\b(azure\.\w+|BlobServiceClient|CosmosClient)\b/m,
+  // Stripe
+  /\bstripe\.\w+\.(create|retrieve|update|list)\s*\(/m,
+  // Firebase / Supabase
+  /\b(firebase|supabase)\.\w+\.\w+\s*\(/m,
+
+  // ── Database query patterns with specific syntax ──
+  // Raw SQL with table operations
+  /\b(CREATE|ALTER|DROP)\s+(TABLE|INDEX|VIEW|FUNCTION)\b/im,
+
+  // ── CLI / shell commands embedded in code ──
+  /\b(exec|spawn|execSync|spawnSync)\s*\(\s*['"`]\w+/m,
+  /\bsubprocess\.(run|call|Popen)\s*\(/m,
 ];
 
 // Files that are likely config, not code (skip checking these)
@@ -78,9 +119,9 @@ function isCodeFile(filePath) {
   return !SKIP_EXTENSIONS.includes(ext);
 }
 
-function containsExternalImports(source) {
+function needsResearch(source) {
   if (!source) return false;
-  return IMPORT_PATTERNS.some(pattern => pattern.test(source));
+  return RESEARCH_NEEDED_PATTERNS.some(pattern => pattern.test(source));
 }
 
 async function main() {
@@ -102,8 +143,8 @@ async function main() {
     process.exit(0);
   }
 
-  // Skip if no external imports detected
-  if (!containsExternalImports(source)) {
+  // Skip if content doesn't need research verification
+  if (!needsResearch(source)) {
     process.exit(0);
   }
 
@@ -116,7 +157,7 @@ async function main() {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         additionalContext: [
-          '[ENFORCE RULE VIOLATION] Writing code with external library imports but NO web research detected in this session.',
+          '[ENFORCE RULE VIOLATION] Writing code with external APIs/libraries/services but NO web research detected in this session.',
           'Rules violated: #1 (Research before code), #6 (Web-research mandate).',
           'You MUST acknowledge this gap. Either:',
           '  (a) Pause and web-search to verify API signatures/versions are current, OR',
