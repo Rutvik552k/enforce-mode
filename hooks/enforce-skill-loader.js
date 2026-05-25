@@ -190,6 +190,9 @@ const SKIP_EXTENSIONS = [
   '.json', '.toml', '.yaml', '.yml', '.md', '.txt', '.csv',
   '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
   '.png', '.jpg', '.gif', '.svg', '.ico',
+  // Document/typesetting — not source code
+  '.tex', '.bib', '.cls', '.sty', '.bst', '.dtx',
+  '.rst', '.adoc', '.asciidoc',
 ];
 
 function isExemptPath(fp) {
