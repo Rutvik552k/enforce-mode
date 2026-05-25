@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * enforce-research-gate.js — PreToolUse hook for Write/Edit/NotebookEdit
+ * enforce-research-gate.js — DEPRECATED: superseded by enforce-write-guard.js
+ *
+ * This hook is NOT registered in plugin.json. The write-guard now handles
+ * the same research check with full PECK escalation (tier 0→3).
+ * Kept for backward compatibility if anyone references it directly.
  *
  * ENFORCES: Rule 1 (Research before code) + Rule 6 (Web-research mandate)
  *
@@ -21,7 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { logEvent } = require('./enforce-state');
+const { logEvent, isSkippedExtension } = require('./enforce-state');
 
 // Research tool indicators in transcript
 const RESEARCH_TOOLS = [
@@ -86,11 +90,7 @@ const RESEARCH_NEEDED_PATTERNS = [
   /\bsubprocess\.(run|call|Popen)\s*\(/m,
 ];
 
-// Files that are likely config, not code (skip checking these)
-const SKIP_EXTENSIONS = [
-  '.json', '.toml', '.yaml', '.yml', '.md', '.txt', '.csv',
-  '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
-];
+// SKIP_EXTENSIONS: now centralized in enforce-state.js (isSkippedExtension)
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -115,9 +115,7 @@ function checkTranscriptForResearch(transcriptPath) {
 }
 
 function isCodeFile(filePath) {
-  if (!filePath) return false;
-  const ext = path.extname(filePath).toLowerCase();
-  return !SKIP_EXTENSIONS.includes(ext);
+  return filePath && !isSkippedExtension(filePath);
 }
 
 function needsResearch(source) {

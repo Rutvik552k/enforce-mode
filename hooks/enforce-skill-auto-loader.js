@@ -34,6 +34,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { isSkippedExtension, isExemptFilePath } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -58,26 +59,10 @@ const WRITE_TOOLS = ['Write', 'Edit', 'NotebookEdit'];
 const RESEARCH_TOOLS = ['WebSearch', 'WebFetch', 'Agent'];
 const ALL_TRIGGER_TOOLS = [...WRITE_TOOLS, ...RESEARCH_TOOLS];
 
-const EXEMPT_PATHS = [
-  '.claude/hooks', '.claude\\hooks',
-  'enforce-mode/hooks', 'enforce-mode\\hooks',
-];
-
-const SKIP_EXTENSIONS = new Set([
-  '.json', '.toml', '.yaml', '.yml', '.md', '.txt', '.csv',
-  '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
-  '.png', '.jpg', '.gif', '.svg', '.ico', '.woff', '.woff2',
-  // Document/typesetting — not source code
-  '.tex', '.bib', '.cls', '.sty', '.bst', '.dtx',
-  '.rst', '.adoc', '.asciidoc',
-]);
-
-function isExemptPath(fp) {
-  return fp && EXEMPT_PATHS.some(p => fp.includes(p));
-}
+// SKIP_EXTENSIONS + EXEMPT_PATHS: now centralized in enforce-state.js
 
 function isCodeFile(fp) {
-  return fp && !SKIP_EXTENSIONS.has(path.extname(fp).toLowerCase());
+  return fp && !isSkippedExtension(fp);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -85,31 +70,43 @@ function isCodeFile(fp) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const EXT_SKILL_MAP = {
-  '.ts': ['code-reviewer', 'tdd-guide'],
-  '.tsx': ['code-reviewer', 'senior-frontend'],
-  '.js': ['code-reviewer', 'tdd-guide'],
-  '.jsx': ['code-reviewer', 'senior-frontend'],
-  '.py': ['python-patterns', 'tdd-guide'],
-  '.go': ['golang-patterns', 'golang-testing'],
-  '.rs': ['rust-patterns', 'rust-testing'],
-  '.kt': ['kotlin-patterns', 'kotlin-testing'],
-  '.java': ['java-coding-standards', 'tdd-guide'],
-  '.cs': ['dotnet-patterns', 'csharp-testing'],
-  '.dart': ['dart-flutter-patterns', 'flutter-dart-code-review'],
-  '.cpp': ['cpp-coding-standards', 'cpp-testing'],
-  '.c': ['cpp-coding-standards', 'cpp-testing'],
-  '.h': ['cpp-coding-standards'],
-  '.hpp': ['cpp-coding-standards'],
-  '.swift': ['swiftui-patterns'],
-  '.sql': ['postgres-patterns'],
-  '.sol': ['defi-amm-security'],
-  '.tf': ['senior-devops', 'deployment-patterns'],
+  '.ts': ['ecc:code-review', 'ecc:tdd-workflow'],
+  '.tsx': ['ecc:code-review', 'ecc:senior-frontend'],
+  '.js': ['ecc:code-review', 'ecc:tdd-workflow'],
+  '.jsx': ['ecc:code-review', 'ecc:senior-frontend'],
+  '.py': ['ecc:python-review', 'ecc:tdd-workflow'],
+  '.go': ['ecc:go-review', 'ecc:go-test'],
+  '.rs': ['ecc:rust-review', 'ecc:rust-test'],
+  '.kt': ['ecc:kotlin-review', 'ecc:kotlin-test'],
+  '.java': ['ecc:code-review', 'ecc:tdd-workflow'],
+  '.cs': ['ecc:code-review', 'ecc:tdd-workflow'],
+  '.dart': ['ecc:flutter-review', 'ecc:flutter-test'],
+  '.cpp': ['ecc:cpp-review', 'ecc:cpp-test'],
+  '.c': ['ecc:cpp-review', 'ecc:cpp-test'],
+  '.h': ['ecc:cpp-review'],
+  '.hpp': ['ecc:cpp-review'],
+  '.swift': ['ecc:code-review'],
+  '.sql': ['ecc:postgres-patterns'],
+  '.sol': ['ecc:security-review'],
+  '.tf': ['ecc:senior-devops', 'ecc:deployment-patterns'],
+  // Additional languages
+  '.rb': ['ecc:code-review'],
+  '.php': ['ecc:code-review'],
+  '.scala': ['ecc:code-review'],
+  '.ex': ['ecc:code-review'],
+  '.exs': ['ecc:code-review'],
+  '.lua': ['ecc:code-review'],
+  '.r': ['ecc:code-review'],
+  '.R': ['ecc:code-review'],
+  '.jl': ['ecc:code-review'],
+  '.groovy': ['ecc:code-review'],
+  '.pl': ['ecc:code-review'],
 };
 
 const FILENAME_SKILL_MAP = {
-  'Dockerfile': ['docker-patterns', 'container-orchestration'],
-  'docker-compose.yml': ['docker-patterns', 'container-orchestration'],
-  'docker-compose.yaml': ['docker-patterns', 'container-orchestration'],
+  'Dockerfile': ['ecc:docker-patterns', 'ecc:senior-devops'],
+  'docker-compose.yml': ['ecc:docker-patterns', 'ecc:senior-devops'],
+  'docker-compose.yaml': ['ecc:docker-patterns', 'ecc:senior-devops'],
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -579,7 +576,7 @@ async function main() {
     const source = toolInput.content || toolInput.new_source || toolInput.new_string || '';
 
     if (!filePath || !source) process.exit(0);
-    if (isExemptPath(filePath)) process.exit(0);
+    if (isExemptFilePath(filePath, true)) process.exit(0); // skillLoaderMode=true
     if (!isCodeFile(filePath)) process.exit(0);
     if (source.length < 5) process.exit(0);
 

@@ -27,7 +27,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isActive, getLevel, peckEvaluateV2, peckTick, peckRecordComplianceV2, logEvent } = require('./enforce-state');
+const { isActive, getLevel, peckEvaluateV2, peckTick, peckRecordComplianceV2, logEvent, isExemptFilePath } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // v3: MODULAR DOMAIN PATTERN LOADING
@@ -357,17 +357,7 @@ function hasJustification(source, matchIndex, keywords, patternName) {
 // SELF-EXEMPTION
 // ═══════════════════════════════════════════════════════════════════════════
 
-const EXEMPT_PATHS = [
-  '.claude/hooks', '.claude\\hooks',
-  'enforce-mode/hooks', 'enforce-mode\\hooks',
-  '/tests/', '\\tests\\', '/test/', '\\test\\',
-  'test-', '.test.', '.spec.', '__tests__',
-  '/fixtures/', '\\fixtures\\',
-];
-
-function isExemptPath(fp) {
-  return fp && EXEMPT_PATHS.some(p => fp.includes(p));
-}
+// EXEMPT_PATHS: now centralized in enforce-state.js (isExemptFilePath)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ACTIVE DOMAINS CACHE
@@ -487,7 +477,7 @@ async function main() {
   const source = toolInput.content || toolInput.new_source || toolInput.new_string || '';
 
   if (!source || !filePath) process.exit(0);
-  if (isExemptPath(filePath)) process.exit(0);
+  if (isExemptFilePath(filePath)) process.exit(0);
 
   // Change 5: Early exit on very small source (imports, config lines)
   if (source.length < 50) process.exit(0);

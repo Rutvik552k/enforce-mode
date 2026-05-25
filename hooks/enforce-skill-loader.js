@@ -36,6 +36,7 @@ const {
   isActive, getLevel, peckEvaluateV2, peckTick,
   peckRecordComplianceV2, getSuggestedSkills,
   recordSuggestedSkills, readState, writeState, logEvent,
+  isSkippedExtension, isExemptFilePath,
 } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -108,6 +109,35 @@ const EXT_SKILL_MAP = {
 
   // Infrastructure
   '.tf':     ['ecc:senior-devops', 'ecc:deployment-patterns'],
+
+  // Ruby
+  '.rb':     ['ecc:code-review', 'ecc:tdd-workflow'],
+
+  // PHP
+  '.php':    ['ecc:code-review', 'ecc:tdd-workflow'],
+
+  // Scala
+  '.scala':  ['ecc:code-review'],
+
+  // Elixir
+  '.ex':     ['ecc:code-review'],
+  '.exs':    ['ecc:code-review'],
+
+  // Perl
+  '.pl':     ['ecc:code-review'],
+
+  // Lua
+  '.lua':    ['ecc:code-review'],
+
+  // R
+  '.r':      ['ecc:code-review'],
+  '.R':      ['ecc:code-review'],
+
+  // Julia
+  '.jl':     ['ecc:code-review'],
+
+  // Groovy
+  '.groovy': ['ecc:code-review'],
 };
 
 // Special filename matches (no extension-based)
@@ -122,31 +152,32 @@ const FILENAME_SKILL_MAP = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const CONTENT_SKILL_MAP = [
-  { regex: /(?:jwt|bcrypt|crypto|auth|login|session|oauth|password)/i,
+  // Require code-like context (function calls, assignments, imports) — not just keywords
+  { regex: /(?:jwt\.(?:sign|verify|decode)|bcrypt\.(?:hash|compare)|crypto\.(?:create|random)|passport\.|authMiddleware|isAuthenticated)\s*\(/i,
     skills: ['ecc:security-review'], label: 'auth/security' },
 
-  { regex: /(?:prisma|sequelize|typeorm|knex|mongoose|\.query|\.execute|SELECT\s|INSERT\s)/,
+  { regex: /(?:prisma|sequelize|typeorm|knex|mongoose)\.\w+\s*\(|\.(?:query|execute)\s*\(\s*['"`]/,
     skills: ['ecc:postgres-patterns'], label: 'database ops' },
 
   { regex: /^FROM\s+\w+|^RUN\s+/m,
     skills: ['ecc:docker-patterns'], label: 'Dockerfile' },
 
-  { regex: /(?:CREATE\s+TABLE|ALTER\s+TABLE|migration|knex\.schema)/i,
+  { regex: /(?:CREATE\s+TABLE|ALTER\s+TABLE)\s+\w+|knex\.schema\.\w+\s*\(/i,
     skills: ['ecc:database-migrations'], label: 'migration' },
 
-  { regex: /(?:describe|it|test|expect|assert|beforeEach|afterEach)\s*\(/,
+  { regex: /(?:describe|it|test|expect|assert|beforeEach|afterEach)\s*\(\s*['"`]/,
     skills: ['ecc:tdd-workflow'], label: 'test code' },
 
-  { regex: /(?:playwright|page\.goto|page\.click|cy\.|cypress)/i,
+  { regex: /(?:playwright|page\.goto|page\.click|cy\.\w+|cypress)\s*\(/i,
     skills: ['ecc:e2e-testing'], label: 'E2E test' },
 
-  { regex: /(?:useState|useEffect|useContext|getServerSideProps|getStaticProps)/,
+  { regex: /(?:useState|useEffect|useContext|getServerSideProps|getStaticProps)\s*\(/,
     skills: ['ecc:senior-frontend'], label: 'React/Next.js' },
 
-  { regex: /(?:app\.(get|post|put|delete)|@(Get|Post|Put|Delete)\(|router\.(get|post))/,
+  { regex: /(?:app\.(get|post|put|delete)|@(Get|Post|Put|Delete)\(|router\.(get|post))\s*\(/,
     skills: ['ecc:senior-backend'], label: 'API endpoint' },
 
-  { regex: /(?:openai|anthropic|langchain|llamaindex|@ai-sdk|completion|chat\.create)/i,
+  { regex: /(?:openai|anthropic|langchain|llamaindex|@ai-sdk)\.\w+|(?:chat|completions?)\.create\s*\(/i,
     skills: ['ecc:ai-security'], label: 'LLM integration' },
 ];
 
@@ -181,26 +212,10 @@ const RESEARCH_SKILL_MAP = [
 // SELF-EXEMPTION (v2: narrowed — only hook files, NOT test files)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const EXEMPT_PATHS = [
-  '.claude/hooks', '.claude\\hooks',
-  'enforce-mode/hooks', 'enforce-mode\\hooks',
-];
-
-const SKIP_EXTENSIONS = [
-  '.json', '.toml', '.yaml', '.yml', '.md', '.txt', '.csv',
-  '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
-  '.png', '.jpg', '.gif', '.svg', '.ico',
-  // Document/typesetting — not source code
-  '.tex', '.bib', '.cls', '.sty', '.bst', '.dtx',
-  '.rst', '.adoc', '.asciidoc',
-];
-
-function isExemptPath(fp) {
-  return fp && EXEMPT_PATHS.some(p => fp.includes(p));
-}
+// SKIP_EXTENSIONS + EXEMPT_PATHS: now centralized in enforce-state.js
 
 function isCodeFile(fp) {
-  return fp && !SKIP_EXTENSIONS.includes(path.extname(fp).toLowerCase());
+  return fp && !isSkippedExtension(fp);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -385,7 +400,7 @@ async function main() {
     source = toolInput.content || toolInput.new_source || toolInput.new_string || '';
 
     if (!source || !filePath) process.exit(0);
-    if (isExemptPath(filePath)) process.exit(0);
+    if (isExemptFilePath(filePath, true)) process.exit(0); // skillLoaderMode=true (no test exemption)
     if (!isCodeFile(filePath)) process.exit(0);
     // v2: lowered threshold from 20 to 5 (anti tiny-file bypass)
     if (source.length < MIN_SOURCE_LENGTH) process.exit(0);

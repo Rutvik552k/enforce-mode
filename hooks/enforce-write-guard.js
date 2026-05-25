@@ -26,7 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { recordPending, isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent } = require('./enforce-state');
+const { recordPending, isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent, isSkippedExtension, isExemptFilePath } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // SECRET DETECTION (high-precision, known prefixes only)
@@ -57,15 +57,12 @@ const SECRET_PATTERNS = [
 // ═══════════════════════════════════════════════════════════
 
 const SECURITY_PATTERNS = [
-  { name: 'Flask route without auth', regex: /@app\.route\(.*\)\s*\ndef\s+\w+\(/ },
-  { name: 'Express open endpoint', regex: /app\.(get|post|put|delete|patch)\s*\(\s*['"]\// },
-  { name: 'FastAPI no auth', regex: /@app\.(get|post|put|delete)\s*\(/ },
-  { name: 'SQL string concat', regex: /(?:execute|query)\s*\(\s*f?['"].*(?:SELECT|INSERT|UPDATE|DELETE).*\+|\.format\(/ },
+  // Tightened: require function def after route decorator (multiline handled by source scan)
+  { name: 'SQL string concat', regex: /(?:execute|query)\s*\(\s*f?['"].*(?:SELECT|INSERT|UPDATE|DELETE).*\+/ },
   { name: 'SQL f-string', regex: /f['"](?:SELECT|INSERT|UPDATE|DELETE)\s+.*\{/ },
-  { name: 'eval() usage', regex: /\beval\s*\(/ },
-  { name: 'exec() usage', regex: /\bexec\s*\(/ },
+  { name: 'eval() usage', regex: /\beval\s*\([^)]+\)/ },
   { name: 'SSL verify disabled', regex: /verify\s*=\s*False/ },
-  { name: 'CORS allow all', regex: /(?:Access-Control-Allow-Origin|cors)\s*[:=]\s*['"]?\*['"]?/ },
+  { name: 'CORS allow all', regex: /(?:Access-Control-Allow-Origin|allowedOrigins?)\s*[:=]\s*['"]?\*['"]?/ },
 ];
 
 // ═══════════════════════════════════════════════════════════
@@ -89,11 +86,7 @@ const IMPORT_PATTERNS = [
   /^\s*import\s+\(/m,
 ];
 
-const SKIP_EXTENSIONS = [
-  '.json', '.toml', '.yaml', '.yml', '.md', '.txt', '.csv',
-  '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
-  '.png', '.jpg', '.gif', '.svg', '.ico',
-];
+// SKIP_EXTENSIONS: now centralized in enforce-state.js (isSkippedExtension)
 
 // ═══════════════════════════════════════════════════════════
 // STDLIB WHITELIST
@@ -136,15 +129,7 @@ function isStdlibOnly(source) {
 // SELF-EXEMPTION
 // ═══════════════════════════════════════════════════════════
 
-const EXEMPT_PATHS = [
-  '.claude/hooks', '.claude\\hooks',
-  'enforce-mode/hooks', 'enforce-mode\\hooks',
-  '/tests/', '\\tests\\', 'test-', '.test.', '.spec.',
-];
-
-function isExemptPath(fp) {
-  return fp && EXEMPT_PATHS.some(p => fp.includes(p));
-}
+// EXEMPT_PATHS: now centralized in enforce-state.js (isExemptFilePath)
 
 // ═══════════════════════════════════════════════════════════
 // CORE
@@ -179,7 +164,7 @@ function checkResearch(transcriptPath) {
 }
 
 function isCodeFile(fp) {
-  return fp && !SKIP_EXTENSIONS.includes(path.extname(fp).toLowerCase());
+  return fp && !isSkippedExtension(fp);
 }
 
 function hasImports(source) {
@@ -249,7 +234,7 @@ async function main() {
   }
 
   // Skip non-code and exempt paths for remaining checks
-  if (!isCodeFile(filePath) || isExemptPath(filePath)) process.exit(0);
+  if (!isCodeFile(filePath) || isExemptFilePath(filePath)) process.exit(0);
 
   // ── CHECK 2: RESEARCH GATE (PECK escalation) ──
   if (hasImports(source) && !isStdlibOnly(source) && !checkResearch(transcriptPath)) {

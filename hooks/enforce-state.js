@@ -36,6 +36,77 @@ const path = require('path');
 const os = require('os');
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SHARED CONSTANTS — single source of truth for all hooks
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * File extensions that are NOT source code — skip enforcement checks.
+ * Used by: write-guard, dsa-guard, research-gate, skill-loader, auto-loader
+ */
+const SHARED_SKIP_EXTENSIONS = new Set([
+  // Config / data
+  '.json', '.toml', '.yaml', '.yml', '.csv', '.xml',
+  '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
+  // Documentation / text
+  '.md', '.txt', '.rst', '.adoc', '.asciidoc',
+  // Document / typesetting
+  '.tex', '.bib', '.cls', '.sty', '.bst', '.dtx',
+  // Markup / styling (not application logic)
+  '.html', '.htm', '.css', '.scss', '.sass', '.less',
+  // Images / fonts / media
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+  '.woff', '.woff2', '.ttf', '.eot',
+  '.mp3', '.mp4', '.wav', '.webm', '.ogg',
+  // Shell scripts (enforced by bash-guard instead)
+  '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+]);
+
+/**
+ * Paths exempt from enforcement checks (self-protection + test files).
+ * Used by: write-guard, dsa-guard, domain-guard
+ * NOTE: skill-loader intentionally does NOT exempt test files (anti-evasion).
+ */
+const SHARED_EXEMPT_PATHS = [
+  // Self-exemption (hook code)
+  '.claude/hooks', '.claude\\hooks',
+  'enforce-mode/hooks', 'enforce-mode\\hooks',
+  // Test files
+  '/tests/', '\\tests\\', '/test/', '\\test\\',
+  'test-', '.test.', '.spec.', '__tests__',
+  '/fixtures/', '\\fixtures\\',
+];
+
+/**
+ * Paths exempt for skill-loader only (narrower — no test exemption).
+ */
+const SKILL_LOADER_EXEMPT_PATHS = [
+  '.claude/hooks', '.claude\\hooks',
+  'enforce-mode/hooks', 'enforce-mode\\hooks',
+];
+
+/**
+ * Check if a file extension should be skipped.
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+function isSkippedExtension(filePath) {
+  if (!filePath) return true;
+  return SHARED_SKIP_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+/**
+ * Check if a file path is exempt from enforcement.
+ * @param {string} filePath
+ * @param {boolean} [skillLoaderMode=false] — use narrower exemptions
+ * @returns {boolean}
+ */
+function isExemptFilePath(filePath, skillLoaderMode = false) {
+  if (!filePath) return false;
+  const patterns = skillLoaderMode ? SKILL_LOADER_EXEMPT_PATHS : SHARED_EXEMPT_PATHS;
+  return patterns.some(p => filePath.includes(p));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // PECK CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -229,9 +300,13 @@ function readState(sessionId) {
 function writeState(sessionId, state) {
   const statePath = getStatePath(sessionId);
   if (!statePath) return;
+  const tmpPath = statePath + '.tmp';
   try {
-    fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+    fs.writeFileSync(tmpPath, JSON.stringify(state, null, 2));
+    fs.renameSync(tmpPath, statePath); // atomic on most filesystems
   } catch {
+    // Cleanup orphaned tmp file
+    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
     // Silent — state loss = tier 0, not deadlock
   }
 }
@@ -1268,4 +1343,11 @@ module.exports = {
   logEvent,
   getLog,
   clearLog,
+
+  // Shared constants
+  SHARED_SKIP_EXTENSIONS,
+  SHARED_EXEMPT_PATHS,
+  SKILL_LOADER_EXEMPT_PATHS,
+  isSkippedExtension,
+  isExemptFilePath,
 };

@@ -184,33 +184,14 @@ const DSA_RESEARCH_TERMS = [
 // ═══════════════════════════════════════════════════════════
 
 const CODE_EXTENSIONS = [
-  '.py', '.js', '.ts', '.tsx', '.jsx',
-  '.go', '.rs', '.java', '.kt', '.c', '.cpp', '.cs',
+  '.py', '.js', '.ts', '.tsx', '.jsx', '.mjs',
+  '.go', '.rs', '.java', '.kt', '.kts', '.c', '.cpp', '.cs',
   '.rb', '.php', '.swift', '.scala',
+  '.ex', '.exs', '.pl', '.lua', '.r', '.R', '.jl', '.groovy',
+  '.dart', '.sol',
 ];
 
-const SKIP_EXTENSIONS = [
-  '.json', '.toml', '.yaml', '.yml', '.md', '.txt', '.csv',
-  '.lock', '.gitignore', '.env', '.cfg', '.ini', '.conf',
-  '.html', '.css', '.scss', '.svg',
-  '.sh', '.bash', '.zsh', '.ps1',
-];
-
-// ═══════════════════════════════════════════════════════════
-// STATE + SELF-EXEMPTION
-// ═══════════════════════════════════════════════════════════
-
-const { recordPending, readState, isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent } = require('./enforce-state');
-
-const EXEMPT_PATHS = [
-  '.claude/hooks', '.claude\\hooks',
-  'enforce-mode/hooks', 'enforce-mode\\hooks',
-  '/tests/', '\\tests\\', 'test-', '.test.', '.spec.',
-];
-
-function isExemptPath(fp) {
-  return fp && EXEMPT_PATHS.some(p => fp.includes(p));
-}
+// SKIP_EXTENSIONS + EXEMPT_PATHS: now centralized in enforce-state.js
 
 // ═══════════════════════════════════════════════════════════
 // CORE FUNCTIONS
@@ -230,8 +211,8 @@ function readStdin() {
 
 function isCodeFile(filePath) {
   if (!filePath) return false;
+  if (isSkippedExtension(filePath)) return false;
   const ext = path.extname(filePath).toLowerCase();
-  if (SKIP_EXTENSIONS.includes(ext)) return false;
   return CODE_EXTENSIONS.includes(ext);
 }
 
@@ -295,7 +276,7 @@ async function main() {
   const source = toolInput.content || toolInput.new_source || toolInput.new_string || '';
 
   if (!source || !isCodeFile(filePath)) process.exit(0);
-  if (isExemptPath(filePath)) process.exit(0);
+  if (isExemptFilePath(filePath)) process.exit(0);
 
   // Tick PECK recovery windows
   peckTick(sessionId);
