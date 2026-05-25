@@ -181,6 +181,12 @@ const EMPTY_PECK = {
   totalCalls: 0,
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// EVENT LOG — transient per-session activity log for response summaries
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MAX_LOG_ENTRIES = 50; // cap to prevent state file bloat
+
 function readState(sessionId) {
   const empty = {
     level: null,
@@ -190,6 +196,7 @@ function readState(sessionId) {
     suggestedSkills: [],
     skillComplianceCount: 0,
     peck: { ...EMPTY_PECK },
+    log: [],
   };
   const statePath = getStatePath(sessionId);
   if (!statePath) return empty;
@@ -212,6 +219,7 @@ function readState(sessionId) {
         deadLetters: Array.isArray(data.peck?.deadLetters) ? data.peck.deadLetters : [],
         totalCalls: data.peck?.totalCalls || 0,
       },
+      log: Array.isArray(data.log) ? data.log : [],
     };
   } catch {
     return empty;
@@ -1165,6 +1173,49 @@ function recordSuggestedSkills(sessionId, skills) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// EVENT LOG API
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Append an event to the session log.
+ * Events are transient — read by stop-guard for response summary, then cleared.
+ *
+ * @param {string} sessionId
+ * @param {object} event - { hook, action, file?, details?, result? }
+ */
+function logEvent(sessionId, event) {
+  if (!sessionId) return;
+  const state = readState(sessionId);
+  state.log.push({ ...event, ts: Date.now() });
+  // Cap log size to prevent state file bloat
+  if (state.log.length > MAX_LOG_ENTRIES) {
+    state.log = state.log.slice(-MAX_LOG_ENTRIES);
+  }
+  writeState(sessionId, state);
+}
+
+/**
+ * Get all log events for this session.
+ * @param {string} sessionId
+ * @returns {Array} log events
+ */
+function getLog(sessionId) {
+  if (!sessionId) return [];
+  return readState(sessionId).log;
+}
+
+/**
+ * Clear the session log (called after summary is emitted).
+ * @param {string} sessionId
+ */
+function clearLog(sessionId) {
+  if (!sessionId) return;
+  const state = readState(sessionId);
+  state.log = [];
+  writeState(sessionId, state);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1212,4 +1263,9 @@ module.exports = {
   // Skill-loading tracking
   getSuggestedSkills,
   recordSuggestedSkills,
+
+  // Event log
+  logEvent,
+  getLog,
+  clearLog,
 };

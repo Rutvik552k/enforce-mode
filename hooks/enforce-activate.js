@@ -20,7 +20,7 @@ const os = require('os');
 const { getDefaultLevel } = require('./enforce-config');
 const { detectDomains } = require('./enforce-detect');
 const { buildContext } = require('./enforce-rules');
-const { setLevel } = require('./enforce-state');
+const { setLevel, logEvent } = require('./enforce-state');
 
 const claudeDir = path.join(os.homedir(), '.claude');
 const flagPath = path.join(claudeDir, '.enforce-active');
@@ -60,7 +60,21 @@ process.stdin.on('end', () => {
   } catch { /* Silent — flag is best-effort for statusline */ }
 
   // 3. Detect project domains
+  const detectStart = Date.now();
   const detectedDomains = detectDomains(process.cwd());
+  const detectMs = Date.now() - detectStart;
+
+  // Log session activation
+  logEvent(sessionId, {
+    hook: 'activate',
+    action: 'session-start',
+    details: {
+      level,
+      domains: detectedDomains.map(d => d.domain),
+      domainCount: detectedDomains.length,
+      detectMs,
+    },
+  });
 
   // 4. Build context (universal rules + domain rules, budget-managed)
   let output;

@@ -26,7 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { recordPending, isActive, peckEvaluate, peckTick, peckRecordCompliance } = require('./enforce-state');
+const { recordPending, isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // SECRET DETECTION (high-precision, known prefixes only)
@@ -239,6 +239,7 @@ async function main() {
   // ── CHECK 1: SECRETS (always, even on exempt paths) ──
   const secrets = scanSecrets(source);
   if (secrets.length > 0) {
+    logEvent(sessionId, { hook: 'write-guard', action: 'block', file: filePath, result: 'secrets', details: { types: secrets } });
     process.stderr.write(
       '[ENFORCE HARD BLOCK] Secrets detected!\n' +
       'Detected:\n' + secrets.map(s => `  - ${s}`).join('\n') + '\n\n' +
@@ -260,6 +261,7 @@ async function main() {
       'REQUIRED: WebSearch/context7/WebFetch for library docs before relying on training knowledge.';
 
     const result = peckEvaluate(sessionId, 'research', filePath, reason);
+    logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'research-gate-tier' + result.tier });
     emitPeckResult(result);
     return; // emitPeckResult calls process.exit
   }
@@ -278,6 +280,7 @@ async function main() {
       'File: ' + filePath;
 
     const result = peckEvaluate(sessionId, 'security', filePath, reason);
+    logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'security-tier' + result.tier, details: { issues: secIssues } });
     emitPeckResult(result);
     return;
   }

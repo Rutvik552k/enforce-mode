@@ -35,7 +35,7 @@ const path = require('path');
 const {
   isActive, getLevel, peckEvaluateV2, peckTick,
   peckRecordComplianceV2, getSuggestedSkills,
-  recordSuggestedSkills, readState, writeState,
+  recordSuggestedSkills, readState, writeState, logEvent,
 } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -410,6 +410,7 @@ async function main() {
       incrementComplianceCount(sessionId);
       peckRecordComplianceV2(sessionId, 'skill-loading', filePath, 'MEDIUM');
     }
+    logEvent(sessionId, { hook: 'skill-loader', action: 'pass', file: filePath || 'research', result: 'compliant', details: { loaded: compliance.loaded.slice(0, 5) } });
     // Always show which skills are active (even if forgiveness capped)
     const loadedList = compliance.loaded.slice(0, 5).map(s => '/' + s).join(', ');
     const out = {
@@ -454,6 +455,7 @@ async function main() {
   }
 
   // ── NO SKILLS LOADED — PECK ESCALATION ──
+  logEvent(sessionId, { hook: 'skill-loader', action: 'escalate', file: filePath || 'research', result: 'no-skills', details: { needed: candidateSkills.slice(0, 3) } });
 
   // UX dedup — track which skills were already suggested (for display only)
   const alreadySuggested = new Set(getSuggestedSkills(sessionId));

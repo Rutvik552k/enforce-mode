@@ -24,7 +24,7 @@
 'use strict';
 
 const fs = require('fs');
-const { isActive, peckEvaluate, peckTick, peckRecordCompliance } = require('./enforce-state');
+const { isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // GIT GATES
@@ -258,6 +258,7 @@ async function main() {
 
   // ── CHECK 1: INFERENCE IN FOREGROUND (HARD BLOCK) ──
   if (isInferenceCommand(cmd) && !isBgCommand(toolInput)) {
+    logEvent(sessionId, { hook: 'bash-guard', action: 'block', file: cmd.substring(0, 80), result: 'inference-foreground' });
     process.stderr.write(
       '[ENFORCE HARD BLOCK] Inference/GPU task detected in foreground!\n' +
       'Rules #16-19: ALL inference, generation, and GPU tasks MUST run in background.\n\n' +
@@ -273,6 +274,7 @@ async function main() {
     const duration = getSleepDuration(cmd);
     if (duration >= 30) {
       // Block long sleeps — agent should not idle
+      logEvent(sessionId, { hook: 'bash-guard', action: 'block', file: cmd.substring(0, 80), result: 'sleep-poll-' + duration + 's' });
       process.stderr.write(
         '[ENFORCE BLOCK] Sleep-poll anti-pattern detected!\n' +
         'Sleeping ' + duration + 's to poll output is wasteful.\n\n' +
@@ -300,6 +302,7 @@ async function main() {
   if (isGitAdd(cmd)) {
     const violations = checkGitAddForSecrets(cmd);
     if (violations.length > 0) {
+      logEvent(sessionId, { hook: 'bash-guard', action: 'block', file: cmd.substring(0, 80), result: 'secrets-binaries', details: { violations: violations.length } });
       process.stderr.write(
         '[ENFORCE HARD BLOCK] Dangerous git add detected!\n' +
         'Rules #9-11: Never commit secrets, tokens, or large binaries.\n\n' +
@@ -339,6 +342,7 @@ async function main() {
         'Run tests first (cargo test, pytest, npm test, etc.).';
 
       const result = peckEvaluate(sessionId, 'test', cmd, reason);
+      logEvent(sessionId, { hook: 'bash-guard', action: 'escalate', file: cmd.substring(0, 80), result: 'no-tests-tier' + result.tier });
 
       if (result.tier >= 3) {
         process.stderr.write(result.message);
@@ -380,6 +384,7 @@ async function main() {
   // ── CHECK 4: COST ALERTS (SOFT WARN) ──
   const costAlerts = checkCostAlerts(cmd);
   if (costAlerts.length > 0) {
+    logEvent(sessionId, { hook: 'bash-guard', action: 'warn', file: cmd.substring(0, 80), result: 'cost-alert', details: { alerts: costAlerts.length } });
     const output = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',

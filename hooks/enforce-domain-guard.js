@@ -27,7 +27,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isActive, getLevel, peckEvaluateV2, peckTick, peckRecordComplianceV2 } = require('./enforce-state');
+const { isActive, getLevel, peckEvaluateV2, peckTick, peckRecordComplianceV2, logEvent } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // v3: MODULAR DOMAIN PATTERN LOADING
@@ -497,7 +497,10 @@ async function main() {
 
   // Scan for domain-specific violations
   const violations = scanDomainPatterns(source, filePath);
-  if (violations.length === 0) process.exit(0);
+  if (violations.length === 0) {
+    logEvent(sessionId, { hook: 'domain-guard', action: 'pass', file: filePath });
+    process.exit(0);
+  }
 
   // Process most severe violation (highest confidence first, then severity)
   violations.sort((a, b) => {
@@ -530,6 +533,14 @@ async function main() {
     patternName: top.pattern.name,
     severity: top.severity,
     level,
+  });
+
+  logEvent(sessionId, {
+    hook: 'domain-guard',
+    action: result.suppressed ? 'suppress' : 'escalate',
+    file: filePath,
+    result: top.domain + '/' + top.pattern.name + '/tier' + result.tier,
+    details: { violations: violations.length, severity: top.severity, confidence: top.confidence },
   });
 
   // Suppressed or advisory with empty message → exit cleanly

@@ -27,7 +27,8 @@
 'use strict';
 
 const fs = require('fs');
-const { getUnresolved, getSummary, recordResearch, isActive, peckGetSummary } = require('./enforce-state');
+const path = require('path');
+const { getUnresolved, getSummary, recordResearch, isActive, peckGetSummary, getLog, clearLog } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // DETECTION PATTERNS
@@ -326,12 +327,59 @@ async function main() {
     }
   }
 
-  if (warnings.length > 0) {
+  // ── ACTIVITY LOG SUMMARY ──
+  const logLines = [];
+  if (sessionId) {
+    const log = getLog(sessionId);
+    if (log.length > 0) {
+      // Group events by hook
+      const byHook = {};
+      const counts = { pass: 0, warn: 0, escalate: 0, block: 0, suppress: 0 };
+      for (const ev of log) {
+        if (!byHook[ev.hook]) byHook[ev.hook] = [];
+        byHook[ev.hook].push(ev);
+        if (counts[ev.action] !== undefined) counts[ev.action]++;
+      }
+
+      logLines.push('[ENFORCE ACTIVITY LOG] ' + log.length + ' events this response');
+      logLines.push('  Pass: ' + counts.pass + ' | Warn: ' + counts.warn +
+        ' | Escalate: ' + counts.escalate + ' | Block: ' + counts.block +
+        ' | Suppress: ' + counts.suppress);
+
+      // Per-hook summary (compact)
+      for (const [hook, events] of Object.entries(byHook)) {
+        const actions = events.map(e => {
+          const file = e.file ? path.basename(e.file) : '';
+          return e.action + (file ? '(' + file + ')' : '') +
+            (e.result ? ':' + e.result : '');
+        });
+        logLines.push('  ' + hook + ': ' + actions.join(', '));
+      }
+
+      // Session start details (if present)
+      const startEvent = log.find(e => e.hook === 'activate' && e.action === 'session-start');
+      if (startEvent && startEvent.details) {
+        const d = startEvent.details;
+        logLines.push('  Session: level=' + d.level +
+          ', domains=[' + (d.domains || []).join(', ') + ']' +
+          ' (' + d.domainCount + ' detected, ' + d.detectMs + 'ms)');
+      }
+
+      // Clear log after reading
+      clearLog(sessionId);
+    }
+  }
+
+  const allOutput = [...logLines, ...warnings];
+
+  if (allOutput.length > 0) {
     const output = {
       stopReason:
-        '[ENFORCE STOP GUARD — Phase 2] Pre-completion checks:\n\n' +
-        warnings.join('\n') +
-        '\n\nAddress these before marking work as complete.',
+        (warnings.length > 0
+          ? '[ENFORCE STOP GUARD — Phase 2] Pre-completion checks:\n\n'
+          : '[ENFORCE ACTIVITY SUMMARY]\n\n') +
+        allOutput.join('\n') +
+        (warnings.length > 0 ? '\n\nAddress these before marking work as complete.' : ''),
     };
     process.stdout.write(JSON.stringify(output));
   }

@@ -21,6 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { logEvent } = require('./enforce-state');
 
 // Research tool indicators in transcript
 const RESEARCH_TOOLS = [
@@ -129,6 +130,7 @@ async function main() {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
   const transcriptPath = input.transcript_path || '';
+  const sessionId = input.session_id || '';
 
   // Only gate Write/Edit/NotebookEdit
   if (!['Write', 'Edit', 'NotebookEdit'].includes(toolName)) {
@@ -152,6 +154,7 @@ async function main() {
   const hasResearch = checkTranscriptForResearch(transcriptPath);
 
   if (!hasResearch) {
+    logEvent(sessionId, { hook: 'research-gate', action: 'warn', file: filePath, result: 'no-research' });
     // Soft gate: allow but inject warning
     const output = {
       hookSpecificOutput: {

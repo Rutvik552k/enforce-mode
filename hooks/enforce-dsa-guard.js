@@ -200,7 +200,7 @@ const SKIP_EXTENSIONS = [
 // STATE + SELF-EXEMPTION
 // ═══════════════════════════════════════════════════════════
 
-const { recordPending, readState, isActive, peckEvaluate, peckTick, peckRecordCompliance } = require('./enforce-state');
+const { recordPending, readState, isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent } = require('./enforce-state');
 
 const EXEMPT_PATHS = [
   '.claude/hooks', '.claude\\hooks',
@@ -319,6 +319,7 @@ async function main() {
 
   if (hasJustification || hasResearch) {
     // Compliance — decay PECK violations
+    logEvent(sessionId, { hook: 'dsa-guard', action: 'pass', file: filePath, result: hasJustification ? 'justified' : 'researched' });
     peckRecordCompliance(sessionId, 'dsa', filePath);
     process.exit(0);
   }
@@ -334,6 +335,7 @@ async function main() {
     'REQUIRED: Add complexity comment (// O(n log n)), justify bounds, or WebSearch for optimal approach.';
 
   const result = peckEvaluate(sessionId, 'dsa', filePath, reason);
+  logEvent(sessionId, { hook: 'dsa-guard', action: 'escalate', file: filePath, result: 'dsa-tier' + result.tier, details: { patterns: patternNames } });
 
   // Emit tier-appropriate response
   if (result.tier >= 3) {

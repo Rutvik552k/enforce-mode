@@ -26,10 +26,10 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 ## Testing
 
 ```bash
-node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js
+node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js
 ```
 
-All 221 tests across 11 suites must pass before committing.
+All 231 tests across 12 suites must pass before committing.
 
 ## Adding Domains (v3)
 
