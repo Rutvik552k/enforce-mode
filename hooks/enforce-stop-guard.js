@@ -211,15 +211,15 @@ async function main() {
     }
   }
 
-  // No code written — nothing to enforce
-  if (!analysis.hasCodeWrites) {
-    process.exit(0);
-  }
-
   const warnings = [];
 
+  // No code written — skip enforcement checks but still emit activity log
+  const skipEnforcement = !analysis.hasCodeWrites;
+
   // ── CHECK 1: CODE WRITTEN BUT NO TESTS ──
-  if (analysis.testCount === 0) {
+  if (skipEnforcement) {
+    // No code written — skip enforcement checks 1-5, jump to activity log
+  } else if (analysis.testCount === 0) {
     warnings.push(
       `[RULE #3, #12] You wrote/edited ${analysis.writeCount} file(s) but ran 0 tests.`,
       'Every code change must be tested. Run the test suite or tell the user tests were NOT run.'
@@ -231,6 +231,7 @@ async function main() {
     );
   }
 
+  if (!skipEnforcement) {
   // ── CHECK 2: PHASE 2 — UNRESOLVED RESEARCH RECOMMENDATIONS ──
   if (sessionId) {
     const unresolved = getUnresolved(sessionId);
@@ -288,7 +289,9 @@ async function main() {
     );
   }
 
-  // ── PECK ENFORCEMENT SUMMARY ──
+  } // end !skipEnforcement
+
+  // ── PECK ENFORCEMENT SUMMARY (always — useful even without code writes) ──
   if (sessionId) {
     const peck = peckGetSummary(sessionId);
 
