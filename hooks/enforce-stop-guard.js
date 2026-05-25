@@ -373,16 +373,18 @@ async function main() {
     }
   }
 
-  const allOutput = [...logLines, ...warnings];
+  // Activity log → stderr (shown directly in terminal, not filtered by Claude)
+  if (logLines.length > 0) {
+    process.stderr.write(logLines.join('\n') + '\n');
+  }
 
-  if (allOutput.length > 0) {
+  // Enforcement warnings → stopReason (Claude must acknowledge)
+  if (warnings.length > 0) {
     const output = {
       stopReason:
-        (warnings.length > 0
-          ? '[ENFORCE STOP GUARD — Phase 2] Pre-completion checks:\n\n'
-          : '[ENFORCE ACTIVITY SUMMARY]\n\n') +
-        allOutput.join('\n') +
-        (warnings.length > 0 ? '\n\nAddress these before marking work as complete.' : ''),
+        '[ENFORCE STOP GUARD — Phase 2] Pre-completion checks:\n\n' +
+        warnings.join('\n') +
+        '\n\nAddress these before marking work as complete.',
     };
     process.stdout.write(JSON.stringify(output));
   }
