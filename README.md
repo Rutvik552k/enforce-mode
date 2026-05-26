@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/Tests-221%20passing-brightgreen.svg" alt="Tests: 221 passing"/></a>
+  <a href="#testing"><img src="https://img.shields.io/badge/Tests-299%20passing-brightgreen.svg" alt="Tests: 299 passing"/></a>
   <a href="#how-it-works"><img src="https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg" alt="Node.js"/></a>
   <a href="#installation"><img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg" alt="Platform"/></a>
 </p>
@@ -28,10 +28,12 @@ Without enforce-mode, Claude Code might:
 - Ignore security best practices
 
 **With enforce-mode**, Claude is guided to:
-- Research APIs before using them
+- Research APIs before using them (per-library ground truth verification)
 - Run tests and show results
 - Never commit secrets
 - Follow security patterns for your project type
+- Load relevant skills before writing code
+- Meet a Ground Truth Confidence (GTC) score threshold every response
 
 <p align="center">
   <img src="images/before-after.png" alt="Before and after enforce-mode" width="100%"/>
@@ -112,6 +114,8 @@ Or just say in chat:
 | Claude says "it should work" without testing | Escalates: "run the tests and show output" |
 | Claude uses `eval()` or SQL string concatenation | Flags security anti-pattern |
 | Claude runs a training script in foreground | Blocks: "use background mode for long tasks" |
+| Claude writes code using `prisma` without searching docs | Immediate deny — must search first |
+| Claude finishes response with low research coverage | GTC score shown in terminal: `GTC: 35/100 [FAIL]` |
 
 ### How Enforcement Works
 
@@ -125,6 +129,14 @@ Violations are handled progressively — not immediately blocked:
 ```
 
 This means you won't get stuck in a loop. If Claude truly can't comply, enforcement stops gracefully.
+
+### Dual Output (v3.4)
+
+All enforcement messages appear in **two places**:
+- **Your terminal** (via stderr) — you always see what's happening
+- **Claude's context** (via additionalContext) — Claude acts on the guidance
+
+No more silent advisory messages that Claude ignores.
 
 ---
 
@@ -142,7 +154,7 @@ enforce-mode automatically detects what type of project you're working on and ac
 
 ---
 
-## Auto-Skill Loading (v3.2.0)
+## Auto-Skill Loading (v3.4)
 
 enforce-mode automatically loads relevant skills based on what code you're writing:
 
@@ -150,9 +162,51 @@ enforce-mode automatically loads relevant skills based on what code you're writi
 - Writing React components? → Frontend best practices loaded
 - Researching Kubernetes? → DevOps skill loaded
 
-**55 skills auto-discoverable** from your installed skill library. New skills you install are picked up automatically within 5 minutes.
+**Dynamic discovery** scans all installed skills from `~/.claude/skills/` — not just ECC skills. Marketplace skills, user skills, and plugin skills are all discoverable. Excluded: enforce-mode and caveman (infrastructure, not code review).
+
+**68+ skills auto-discoverable** from your installed skill library. New skills you install are picked up automatically within 5 minutes.
 
 No manual `/ecc:skill-name` invocation needed — rules inject directly into context.
+
+---
+
+## Ground Truth Enforcement (v3.4)
+
+enforce-mode now tracks **what Claude actually researched** vs **what libraries Claude uses in code**.
+
+### How It Works
+
+1. **Capture**: When Claude searches (WebSearch, context7, Exa), a PostToolUse hook captures the results — query text, snippets, URLs — into session state per library.
+2. **Gate**: When Claude writes code with external imports, a PreToolUse hook checks if each library has captured ground truth. **No ground truth → immediate deny** (budget=1, first violation blocks).
+3. **Inject**: When ground truth exists, relevant doc snippets are injected as context — Claude sees the docs right when writing.
+4. **Score**: A GTC (Ground Truth Confidence) score is computed every response and displayed in your terminal.
+
+### GTC Score
+
+Computed from 6 signals — all hook-measured, zero Claude self-assessment:
+
+| Signal | Points | What it measures |
+|--------|--------|-----------------|
+| Research coverage | 0-30 | % of external libs with captured ground truth |
+| Search specificity | 0-20 | Did search queries contain the library name? |
+| Doc alignment | 0-20 | Do code API calls appear in captured snippets? |
+| Skill compliance | 0-15 | Were relevant review skills loaded? |
+| Test coverage | 0-15 | Were tests run for changed code? |
+| Violations | -5 each | PECK violations reduce score |
+
+```
+┌─────────────────────────────────────┐
+│ GTC: 92/100 [██████████░] HIGH      │
+│ Research: 30/30 | Docs: 18/20       │
+│ Specificity: 20/20 | Skills: 15/15  │
+│ Tests: 15/15 | Violations: -6       │
+└─────────────────────────────────────┘
+```
+
+- **90-100 HIGH**: Full compliance
+- **70-89 GOOD**: Minor gaps
+- **50-69 LOW**: Review recommended
+- **0-49 FAIL**: Stop hook blocks completion until gaps addressed
 
 ---
 
@@ -201,18 +255,40 @@ Warns → Blocks → Hard-stops on repeated violations
 - < 150ms per check (usually ~100ms)
 - Per-session isolation (one session's state doesn't affect others)
 - 8KB max context budget (doesn't bloat your conversations)
+- Dual output: stderr (user terminal) + additionalContext (Claude context)
+- Ground truth captured via PostToolUse hooks on search tools
+- GTC score computed per response, displayed via stderr (zero context cost)
+- Dynamic skill discovery from `~/.claude/skills/` (68+ skills, 5-min cache)
 
 ---
 
 ## Testing
 
 ```bash
-# Run all 221 tests
+# Run all 299 tests across 14 suites
 node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && \
 node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && \
 node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && \
-node tests/test-peck-v3.js && node tests/test-skill-loader.js
+node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js && \
+node tests/test-gtc.js && node tests/test-e2e-integration.js
 ```
+
+| Suite | Tests | What it covers |
+|-------|-------|---------------|
+| test-config | 8 | Configuration loading |
+| test-detect | 13 | Domain detection v1 |
+| test-detect-v2 | 11 | Domain detection v2+v3 |
+| test-rules | 18 | Rule loading + level filtering |
+| test-compress | 11 | Context compression |
+| test-peck | 28 | PECK v1 escalation engine |
+| test-peck-v2 | 35 | PECK v2 confidence weighting |
+| test-deadlocks | 20 | Deadlock prevention fixes |
+| test-domain-guard | 20 | Domain pattern enforcement |
+| test-peck-v3 | 27 | Level-aware severity + safety valve |
+| test-skill-loader | 30 | Skill loading + anti-evasion |
+| test-log | 10 | Event logging |
+| test-gtc | 39 | Ground truth + GTC scoring |
+| test-e2e-integration | 29 | Full pipeline integration |
 
 ---
 
@@ -247,6 +323,9 @@ A: No. Everything runs locally. Zero API calls, zero network requests.
 **Q: Can I use it with other plugins?**
 A: Yes. It coexists with caveman-mode and other Claude Code plugins.
 
+**Q: What is the GTC score?**
+A: Ground Truth Confidence — a 0-100 score computed from measurable signals (research coverage, doc alignment, skill compliance, tests). It's not Claude self-assessing; it's hooks measuring what actually happened. Displayed in your terminal every response.
+
 ---
 
 ## Contributing
@@ -267,5 +346,5 @@ A: Yes. It coexists with caveman-mode and other Claude Code plugins.
 ---
 
 <p align="center">
-  <b>v3.2.0</b> — 41 domains, 221 tests, 55 auto-discoverable skills, zero dependencies
+  <b>v3.4.0</b> — 41 domains, 299 tests, 68+ auto-discoverable skills, GTC scoring, ground truth enforcement, dual output, zero dependencies
 </p>
