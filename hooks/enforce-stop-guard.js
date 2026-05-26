@@ -450,15 +450,15 @@ async function main() {
     // Record score
     recordGTCScore(sessionId, { score: gtc.score, breakdown: gtc.breakdown });
 
-    // Always display GTC via stderr
+    // Display GTC via stderr (terminal) and always include in warnings (visible to user)
     process.stderr.write('\n' + formatGTC(gtc) + '\n');
 
-    // If GTC < 50 (FAIL), add to warnings — forces Claude to acknowledge
+    // Always show GTC score to user via stopReason
+    warnings.push('[GTC: ' + gtc.score + '/100 — ' + gtc.label + '] Research:' + gtc.breakdown.researchCov + '/30 Docs:' + gtc.breakdown.docAlign + '/20 Skills:' + gtc.breakdown.skillComp + '/15 Tests:' + gtc.breakdown.testCov + '/15');
+
     if (gtc.score < 50) {
       warnings.push(
-        '[GTC SCORE: ' + gtc.score + '/100 — FAIL] Ground Truth Confidence too low.',
-        'Research coverage: ' + gtc.breakdown.researchCov + '/30',
-        'Doc alignment: ' + gtc.breakdown.docAlign + '/20',
+        'GTC FAIL — Ground Truth Confidence too low.',
         'Action: Search for library documentation before continuing.'
       );
     }
