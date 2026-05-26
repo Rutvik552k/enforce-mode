@@ -28,7 +28,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getUnresolved, getSummary, recordResearch, isActive, peckGetSummary, getLog, clearLog } = require('./enforce-state');
+const { getUnresolved, getSummary, recordResearch, isActive, peckGetSummary, getLog, clearLog, getResearchedLibs, computeGTC, formatGTC, recordGTCScore } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // DETECTION PATTERNS
@@ -376,6 +376,92 @@ async function main() {
   // Activity log → stderr (shown directly in terminal, not filtered by Claude)
   if (logLines.length > 0) {
     process.stderr.write(logLines.join('\n') + '\n');
+  }
+
+  // ── GTC SCORE (Ground Truth Confidence) — every response with code writes ──
+  if (sessionId && analysis.hasCodeWrites) {
+    // Extract external libs from transcript (libraries that were written)
+    const externalLibs = [];
+    const apiCalls = [];
+    try {
+      if (transcriptPath && fs.existsSync(transcriptPath)) {
+        const content = fs.readFileSync(transcriptPath, 'utf8');
+        // Extract library names from import patterns in written code
+        const importMatches = content.matchAll(/(?:import|from|require)\s*\(?['"]?([a-zA-Z][\w.-]*)/g);
+        const seen = new Set();
+        for (const m of importMatches) {
+          const lib = m[1].split('/')[0].split('.')[0].toLowerCase();
+          if (!seen.has(lib) && lib.length >= 2) {
+            seen.add(lib);
+            externalLibs.push(lib);
+          }
+        }
+        // Extract API method calls (lib.method patterns)
+        const apiMatches = content.matchAll(/\b(\w+)\.(\w+)\s*\(/g);
+        const seenApi = new Set();
+        for (const m of apiMatches) {
+          const api = m[1] + '.' + m[2];
+          if (!seenApi.has(api)) {
+            seenApi.add(api);
+            apiCalls.push(api);
+          }
+        }
+      }
+    } catch { /* silent */ }
+
+    // Extract skills from transcript
+    const skillsLoaded = [];
+    try {
+      if (transcriptPath && fs.existsSync(transcriptPath)) {
+        const content = fs.readFileSync(transcriptPath, 'utf8');
+        const skillMatches = content.matchAll(/["']skill["']\s*:\s*["'](ecc:[a-z0-9-]+)["']/g);
+        for (const m of skillMatches) {
+          if (!skillsLoaded.includes(m[1])) skillsLoaded.push(m[1]);
+        }
+      }
+    } catch { /* silent */ }
+
+    // Determine required skills from file extensions in log
+    const skillsRequired = [];
+    const log = getLog(sessionId);
+    const extSkillMap = {
+      '.ts': 'ecc:code-review', '.js': 'ecc:code-review',
+      '.py': 'ecc:python-review', '.go': 'ecc:go-review',
+      '.rs': 'ecc:rust-review', '.kt': 'ecc:kotlin-review',
+    };
+    for (const ev of log) {
+      if (ev.file) {
+        const ext = path.extname(ev.file).toLowerCase();
+        const skill = extSkillMap[ext];
+        if (skill && !skillsRequired.includes(skill)) {
+          skillsRequired.push(skill);
+        }
+      }
+    }
+
+    const gtc = computeGTC(sessionId, {
+      externalLibs: externalLibs.slice(0, 20),
+      apiCalls: apiCalls.slice(0, 30),
+      skillsRequired,
+      skillsLoaded,
+      testsRun: analysis.hasTests,
+    });
+
+    // Record score
+    recordGTCScore(sessionId, { score: gtc.score, breakdown: gtc.breakdown });
+
+    // Always display GTC via stderr
+    process.stderr.write('\n' + formatGTC(gtc) + '\n');
+
+    // If GTC < 50 (FAIL), add to warnings — forces Claude to acknowledge
+    if (gtc.score < 50) {
+      warnings.push(
+        '[GTC SCORE: ' + gtc.score + '/100 — FAIL] Ground Truth Confidence too low.',
+        'Research coverage: ' + gtc.breakdown.researchCov + '/30',
+        'Doc alignment: ' + gtc.breakdown.docAlign + '/20',
+        'Action: Search for library documentation before continuing.'
+      );
+    }
   }
 
   // Enforcement warnings → stopReason (Claude must acknowledge)

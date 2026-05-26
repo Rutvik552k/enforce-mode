@@ -285,13 +285,14 @@ async function main() {
       );
       process.exit(2);
     } else {
-      // Short sleeps get a warning
+      // Short sleeps get a warning — dual output
+      const sleepMsg = '[ENFORCE WARNING] Sleep-poll detected (sleep ' + duration + 's).\n' +
+        'Prefer waiting for background task notifications over polling.';
+      process.stderr.write('[BASH-GUARD] ' + sleepMsg + '\n');
       const output = {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          additionalContext:
-            '[ENFORCE WARNING] Sleep-poll detected (sleep ' + duration + 's).\n' +
-            'Prefer waiting for background task notifications over polling.',
+          additionalContext: sleepMsg,
         },
       };
       process.stdout.write(JSON.stringify(output));
@@ -319,12 +320,13 @@ async function main() {
     // If transcript is unavailable, fall back to soft warn (not hard block)
     // This prevents deadlock in doc-only projects or early-session commits
     if (!transcriptPath) {
+      const noTranscriptMsg = '[ENFORCE WARNING] No transcript available to verify test execution.\n' +
+        'Rule #3: Ensure tests were run before committing.';
+      process.stderr.write('[BASH-GUARD] ' + noTranscriptMsg + '\n');
       const output = {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          additionalContext:
-            '[ENFORCE WARNING] No transcript available to verify test execution.\n' +
-            'Rule #3: Ensure tests were run before committing.',
+          additionalContext: noTranscriptMsg,
         },
       };
       process.stdout.write(JSON.stringify(output));
@@ -355,7 +357,8 @@ async function main() {
         process.stdout.write(JSON.stringify(output));
         process.exit(0);
       }
-      // Tier 0-1: approve + context
+      // Tier 0-1: approve + dual output (stderr for user, context for Claude)
+      process.stderr.write('[BASH-GUARD] ' + result.message + '\n');
       const output = { hookSpecificOutput: { hookEventName: 'PreToolUse',
         additionalContext: result.message }};
       process.stdout.write(JSON.stringify(output));
@@ -368,12 +371,13 @@ async function main() {
     }
 
     if (!hasTests && hasBuilds) {
+      const buildNoTestMsg = '[ENFORCE WARNING] Build found but no test execution.\n' +
+        'Rule #3, #12: Run actual tests, not just builds.';
+      process.stderr.write('[BASH-GUARD] ' + buildNoTestMsg + '\n');
       const output = {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          additionalContext:
-            '[ENFORCE WARNING] Build found but no test execution.\n' +
-            'Rule #3, #12: Run actual tests, not just builds.',
+          additionalContext: buildNoTestMsg,
         },
       };
       process.stdout.write(JSON.stringify(output));
@@ -385,13 +389,14 @@ async function main() {
   const costAlerts = checkCostAlerts(cmd);
   if (costAlerts.length > 0) {
     logEvent(sessionId, { hook: 'bash-guard', action: 'warn', file: cmd.substring(0, 80), result: 'cost-alert', details: { alerts: costAlerts.length } });
+    const costMsg = '[ENFORCE COST ALERT] Rules #24-27:\n' +
+      costAlerts.map(a => `  - ${a}`).join('\n') + '\n' +
+      'Track cost ($/hr x estimated time). Warn user if >$5.';
+    process.stderr.write('[BASH-GUARD] ' + costMsg + '\n');
     const output = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        additionalContext:
-          '[ENFORCE COST ALERT] Rules #24-27:\n' +
-          costAlerts.map(a => `  - ${a}`).join('\n') + '\n' +
-          'Track cost ($/hr x estimated time). Warn user if >$5.',
+        additionalContext: costMsg,
       },
     };
     process.stdout.write(JSON.stringify(output));

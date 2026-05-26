@@ -347,7 +347,8 @@ function emitPeckResult(result) {
     process.exit(0);
   }
 
-  // Tier 0 or 1: approve + context
+  // Tier 0 or 1: approve + dual output (stderr for user, context for Claude)
+  process.stderr.write('[SKILL-LOADER] ' + result.message + '\n');
   const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
     additionalContext: result.message }};
   process.stdout.write(JSON.stringify(out));
@@ -429,8 +430,12 @@ async function main() {
       peckRecordComplianceV2(sessionId, 'skill-loading', filePath, 'MEDIUM');
     }
     logEvent(sessionId, { hook: 'skill-loader', action: 'pass', file: filePath || 'research', result: 'compliant', details: { loaded: compliance.loaded.slice(0, 5) } });
-    // Always show which skills are active (even if forgiveness capped)
+    // Always show which skills are active — dual output (stderr for user, context for Claude)
     const loadedList = compliance.loaded.slice(0, 5).map(s => '/' + s).join(', ');
+    const complianceMsg = '[SKILLS LOADED] Active: ' + loadedList +
+      (compliance.loaded.length > 5 ? ' (+' + (compliance.loaded.length - 5) + ' more)' : '') +
+      ' \u2014 enforcement compliant.';
+    process.stderr.write('[SKILL-LOADER] ' + complianceMsg + '\n');
     const out = {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',

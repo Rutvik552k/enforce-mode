@@ -550,7 +550,8 @@ async function main() {
     process.stdout.write(JSON.stringify(out));
     process.exit(0);
   }
-  // Tier 0 or 1: approve + context
+  // Tier 0 or 1: approve + dual output (stderr for user, context for Claude)
+  process.stderr.write('[DOMAIN-GUARD] ' + result.message + '\n');
   const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
     additionalContext: result.message }};
   process.stdout.write(JSON.stringify(out));

@@ -211,6 +211,7 @@ const PECK_CONFIG = {
     'graphql': 3,           // MEDIUM confidence
     'licensing': 3,         // MEDIUM confidence
     'skill-loading': 4,    // MEDIUM confidence, generous — many legitimate skips
+    'research-mandatory': 1, // Budget=1 → first violation = T2 deny, immediate
   },
 
   // v3: Level-aware severity → max PECK tier mapping
@@ -268,6 +269,8 @@ function readState(sessionId) {
     skillComplianceCount: 0,
     peck: { ...EMPTY_PECK },
     log: [],
+    groundTruth: {},   // { libName: { query, snippets, urls, ts } }
+    gtcScores: [],     // [{ score, breakdown, ts }] — per-response GTC history
   };
   const statePath = getStatePath(sessionId);
   if (!statePath) return empty;
@@ -291,6 +294,8 @@ function readState(sessionId) {
         totalCalls: data.peck?.totalCalls || 0,
       },
       log: Array.isArray(data.log) ? data.log : [],
+      groundTruth: data.groundTruth && typeof data.groundTruth === 'object' ? data.groundTruth : {},
+      gtcScores: Array.isArray(data.gtcScores) ? data.gtcScores : [],
     };
   } catch {
     return empty;
@@ -1291,6 +1296,222 @@ function clearLog(sessionId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// GROUND TRUTH — search result capture for GTC scoring
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MAX_SNIPPET_LENGTH = 500;  // max chars per library snippet
+const MAX_GROUND_TRUTH_ENTRIES = 30; // cap to prevent state bloat
+const MAX_GTC_SCORES = 20;      // keep last N scores
+
+/**
+ * Record captured ground truth for a library.
+ * @param {string} sessionId
+ * @param {string} lib — library name (lowercase)
+ * @param {{ query: string, snippets: string[], urls: string[] }} data
+ */
+function recordGroundTruth(sessionId, lib, data) {
+  if (!sessionId || !lib) return;
+  const state = readState(sessionId);
+  const keys = Object.keys(state.groundTruth);
+  // Cap entries — evict oldest if over limit
+  if (keys.length >= MAX_GROUND_TRUTH_ENTRIES && !state.groundTruth[lib]) {
+    let oldest = keys[0], oldestTs = Infinity;
+    for (const k of keys) {
+      if (state.groundTruth[k].ts < oldestTs) {
+        oldest = k;
+        oldestTs = state.groundTruth[k].ts;
+      }
+    }
+    delete state.groundTruth[oldest];
+  }
+  // Truncate snippets
+  const snippets = (data.snippets || [])
+    .slice(0, 5)
+    .map(s => typeof s === 'string' ? s.substring(0, MAX_SNIPPET_LENGTH) : '');
+  state.groundTruth[lib] = {
+    query: (data.query || '').substring(0, 200),
+    snippets,
+    urls: (data.urls || []).slice(0, 5),
+    ts: Date.now(),
+  };
+  writeState(sessionId, state);
+}
+
+/**
+ * Get ground truth for a library.
+ * @param {string} sessionId
+ * @param {string} lib
+ * @returns {{ query: string, snippets: string[], urls: string[], ts: number } | null}
+ */
+function getGroundTruth(sessionId, lib) {
+  if (!sessionId || !lib) return null;
+  const state = readState(sessionId);
+  return state.groundTruth[lib] || null;
+}
+
+/**
+ * Get all libraries with ground truth.
+ * @param {string} sessionId
+ * @returns {string[]}
+ */
+function getResearchedLibs(sessionId) {
+  if (!sessionId) return [];
+  return Object.keys(readState(sessionId).groundTruth);
+}
+
+/**
+ * Record a GTC score for this response.
+ * @param {string} sessionId
+ * @param {{ score: number, breakdown: object }} entry
+ */
+function recordGTCScore(sessionId, entry) {
+  if (!sessionId) return;
+  const state = readState(sessionId);
+  state.gtcScores.push({ ...entry, ts: Date.now() });
+  if (state.gtcScores.length > MAX_GTC_SCORES) {
+    state.gtcScores = state.gtcScores.slice(-MAX_GTC_SCORES);
+  }
+  writeState(sessionId, state);
+}
+
+/**
+ * Get GTC score history.
+ * @param {string} sessionId
+ * @returns {Array}
+ */
+function getGTCScores(sessionId) {
+  if (!sessionId) return [];
+  return readState(sessionId).gtcScores;
+}
+
+/**
+ * Compute GTC score from session state + transcript analysis.
+ *
+ * Signals (all hook-computed, zero Claude self-assessment):
+ *   Research coverage:  0-30  (% external libs with ground truth)
+ *   Search specificity: 0-20  (queries contain lib + API keywords)
+ *   Doc alignment:      0-20  (code APIs found in captured snippets)
+ *   Skill compliance:   0-15  (relevant skills loaded)
+ *   Test coverage:      0-15  (tests run for changed code)
+ *   Violations:         -5 each
+ *   Dead letters:       -15 each
+ *
+ * @param {string} sessionId
+ * @param {{ externalLibs: string[], apiCalls: string[], skillsRequired: string[], skillsLoaded: string[], testsRun: boolean }} signals
+ * @returns {{ score: number, breakdown: object, label: string }}
+ */
+function computeGTC(sessionId, signals) {
+  const state = readState(sessionId);
+  const {
+    externalLibs = [],
+    apiCalls = [],
+    skillsRequired = [],
+    skillsLoaded = [],
+    testsRun = false,
+  } = signals;
+
+  // 1. Research coverage (0-30)
+  let researchCov = 30; // default full if no external libs
+  if (externalLibs.length > 0) {
+    const withTruth = externalLibs.filter(lib => !!state.groundTruth[lib]).length;
+    researchCov = Math.round((withTruth / externalLibs.length) * 30);
+  }
+
+  // 2. Search specificity (0-20)
+  let searchSpec = 20;
+  if (externalLibs.length > 0) {
+    let specificCount = 0;
+    for (const lib of externalLibs) {
+      const gt = state.groundTruth[lib];
+      if (gt && gt.query) {
+        // Check if query contains library name (basic specificity)
+        if (gt.query.toLowerCase().includes(lib)) specificCount++;
+      }
+    }
+    searchSpec = externalLibs.length > 0
+      ? Math.round((specificCount / externalLibs.length) * 20)
+      : 20;
+  }
+
+  // 3. Doc alignment (0-20)
+  let docAlign = 20;
+  if (apiCalls.length > 0) {
+    let foundInDocs = 0;
+    const allSnippets = Object.values(state.groundTruth)
+      .flatMap(gt => gt.snippets || [])
+      .join(' ')
+      .toLowerCase();
+    for (const api of apiCalls) {
+      if (allSnippets.includes(api.toLowerCase())) foundInDocs++;
+    }
+    docAlign = Math.round((foundInDocs / apiCalls.length) * 20);
+  }
+
+  // 4. Skill compliance (0-15)
+  let skillComp = 15;
+  if (skillsRequired.length > 0) {
+    const loadedSet = new Set(skillsLoaded);
+    const matchCount = skillsRequired.filter(s => loadedSet.has(s)).length;
+    skillComp = Math.round((matchCount / skillsRequired.length) * 15);
+  }
+
+  // 5. Test coverage (0-15)
+  const testCov = testsRun ? 15 : 0;
+
+  // 6. Violations penalty (-5 each)
+  const violationCount = Object.values(state.peck.violations)
+    .reduce((sum, v) => sum + (v.count || 0), 0);
+  const violationPenalty = Math.round(violationCount) * -5;
+
+  // 7. Dead letter penalty (-15 each)
+  const dlPenalty = (state.peck.deadLetters.length || 0) * -15;
+
+  const raw = researchCov + searchSpec + docAlign + skillComp + testCov + violationPenalty + dlPenalty;
+  const score = Math.max(0, Math.min(100, raw));
+
+  // Label
+  let label;
+  if (score >= 90) label = 'HIGH';
+  else if (score >= 70) label = 'GOOD';
+  else if (score >= 50) label = 'LOW';
+  else label = 'FAIL';
+
+  return {
+    score,
+    label,
+    breakdown: {
+      researchCov,
+      searchSpec,
+      docAlign,
+      skillComp,
+      testCov,
+      violationPenalty,
+      dlPenalty,
+    },
+  };
+}
+
+/**
+ * Format GTC score for terminal display.
+ * @param {{ score: number, label: string, breakdown: object }} gtc
+ * @returns {string}
+ */
+function formatGTC(gtc) {
+  const filled = Math.round(gtc.score / 10);
+  const bar = '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
+  const b = gtc.breakdown;
+  return (
+    '┌─────────────────────────────────────┐\n' +
+    '│ GTC: ' + gtc.score + '/100 [' + bar + '] ' + gtc.label + '\n' +
+    '│ Research: ' + b.researchCov + '/30 | Docs: ' + b.docAlign + '/20\n' +
+    '│ Specificity: ' + b.searchSpec + '/20 | Skills: ' + b.skillComp + '/15\n' +
+    '│ Tests: ' + b.testCov + '/15 | Violations: ' + b.violationPenalty + '\n' +
+    (b.dlPenalty < 0 ? '│ Dead letters: ' + b.dlPenalty + '\n' : '') +
+    '└─────────────────────────────────────┘'
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1343,6 +1564,15 @@ module.exports = {
   logEvent,
   getLog,
   clearLog,
+
+  // Ground truth + GTC
+  recordGroundTruth,
+  getGroundTruth,
+  getResearchedLibs,
+  recordGTCScore,
+  getGTCScores,
+  computeGTC,
+  formatGTC,
 
   // Shared constants
   SHARED_SKIP_EXTENSIONS,

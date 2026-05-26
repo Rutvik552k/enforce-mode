@@ -98,6 +98,30 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-post-write-check.js",
+            "timeout": 5,
+            "statusMessage": "Post-write compliance check..."
+          }
+        ]
+      },
+      {
+        "matcher": "WebSearch|WebFetch|mcp__plugin_ecc_context7__query-docs|mcp__plugin_ecc_context7__resolve-library-id|mcp__plugin_ecc_exa__web_search_exa|mcp__plugin_ecc_exa__web_fetch_exa",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-research-capture.js",
+            "timeout": 5,
+            "statusMessage": "Capturing research results..."
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

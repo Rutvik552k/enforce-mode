@@ -26,7 +26,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { recordPending, isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent, isSkippedExtension, isExemptFilePath } = require('./enforce-state');
+const { recordPending, isActive, getLevel, peckEvaluateV2, peckTick, peckRecordComplianceV2, logEvent, isSkippedExtension, isExemptFilePath, getGroundTruth, getResearchedLibs } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // SECRET DETECTION (high-precision, known prefixes only)
@@ -126,6 +126,89 @@ function isStdlibOnly(source) {
 }
 
 // ═══════════════════════════════════════════════════════════
+// PER-LIBRARY RESEARCH TRACKING
+// ═══════════════════════════════════════════════════════════
+
+// Common well-known libraries that don't need research verification
+const COMMON_LIBS = new Set([
+  // JS ecosystem
+  'express', 'react', 'react-dom', 'next', 'vue', 'angular',
+  'lodash', 'underscore', 'axios', 'node-fetch', 'chalk',
+  'dotenv', 'cors', 'helmet', 'morgan', 'body-parser',
+  'jest', 'mocha', 'chai', 'vitest', 'prettier', 'eslint',
+  'typescript', 'webpack', 'vite', 'rollup', 'esbuild',
+  // Python ecosystem
+  'pytest', 'flask', 'django', 'fastapi', 'requests',
+  'numpy', 'pandas', 'matplotlib', 'click', 'pydantic',
+  'black', 'flake8', 'mypy', 'pylint', 'setuptools', 'pip',
+]);
+
+/**
+ * Extract external (non-stdlib, non-common) library names from source.
+ * @param {string} source
+ * @returns {string[]} unique external library names
+ */
+function extractExternalLibs(source) {
+  const importNames = [];
+  for (const m of source.matchAll(/^\s*(?:import|from)\s+([a-zA-Z_][a-zA-Z0-9_.]*)/gm)) {
+    importNames.push(m[1].split('.')[0].toLowerCase());
+  }
+  for (const m of source.matchAll(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    importNames.push(m[1].split('/')[0].toLowerCase());
+  }
+  for (const m of source.matchAll(/import\s+.*from\s+['"]([^'"]+)['"]/g)) {
+    importNames.push(m[1].split('/')[0].toLowerCase());
+  }
+  const allStdlib = new Set([...NODE_STDLIB, ...PYTHON_STDLIB].map(s => s.toLowerCase()));
+  // Normalize scoped packages: @prisma/client → prisma
+  const normalized = importNames.map(name =>
+    name.startsWith('@') ? name.slice(1) : name
+  );
+  const external = [...new Set(normalized)].filter(
+    name => !allStdlib.has(name) && !COMMON_LIBS.has(name) && !name.startsWith('.')
+  );
+  return external;
+}
+
+/**
+ * Check transcript for per-library research evidence.
+ * Returns { researched: string[], unresearched: string[] }
+ * @param {string} transcriptPath
+ * @param {string[]} libs — external library names to check
+ * @returns {{ researched: string[], unresearched: string[] }}
+ */
+function checkResearchForLibs(transcriptPath, libs) {
+  if (!libs.length) return { researched: [], unresearched: [] };
+  let content = '';
+  try {
+    if (!transcriptPath || !fs.existsSync(transcriptPath)) {
+      return { researched: [], unresearched: libs };
+    }
+    content = fs.readFileSync(transcriptPath, 'utf8').toLowerCase();
+  } catch {
+    return { researched: [], unresearched: libs };
+  }
+
+  // Must have at least one research tool used
+  const hasAnyResearch = RESEARCH_TOOLS.some(tool => content.includes(tool.toLowerCase()));
+  if (!hasAnyResearch) {
+    return { researched: [], unresearched: libs };
+  }
+
+  const researched = [];
+  const unresearched = [];
+  for (const lib of libs) {
+    // Check if library name appears in transcript (in search queries, URLs, etc.)
+    if (content.includes(lib)) {
+      researched.push(lib);
+    } else {
+      unresearched.push(lib);
+    }
+  }
+  return { researched, unresearched };
+}
+
+// ═══════════════════════════════════════════════════════════
 // SELF-EXEMPTION
 // ═══════════════════════════════════════════════════════════
 
@@ -191,7 +274,8 @@ function emitPeckResult(result) {
     process.exit(0);
   }
 
-  // Tier 0 or 1: approve + context
+  // Tier 0 or 1: approve + dual output (stderr for user, context for Claude)
+  process.stderr.write('[WRITE-GUARD] ' + result.message + '\n');
   const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
     additionalContext: result.message }};
   process.stdout.write(JSON.stringify(out));
@@ -236,27 +320,91 @@ async function main() {
   // Skip non-code and exempt paths for remaining checks
   if (!isCodeFile(filePath) || isExemptFilePath(filePath)) process.exit(0);
 
-  // ── CHECK 2: RESEARCH GATE (PECK escalation) ──
-  if (hasImports(source) && !isStdlibOnly(source) && !checkResearch(transcriptPath)) {
-    recordPending(sessionId, 'research', filePath, ['external imports detected']);
+  const level = (sessionId && getLevel(sessionId)) || 'solo';
 
-    const reason =
-      'External library imports detected without prior web research.\n' +
-      'File: ' + filePath + '\n\n' +
-      'REQUIRED: WebSearch/context7/WebFetch for library docs before relying on training knowledge.';
+  // ── CHECK 2: RESEARCH GATE (ground truth + immediate deny) ──
+  if (hasImports(source) && !isStdlibOnly(source)) {
+    const externalLibs = extractExternalLibs(source);
 
-    const result = peckEvaluate(sessionId, 'research', filePath, reason);
-    logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'research-gate-tier' + result.tier });
-    emitPeckResult(result);
-    return; // emitPeckResult calls process.exit
+    if (externalLibs.length > 0) {
+      // Check ground truth (captured search results) per library
+      const withTruth = [];
+      const withoutTruth = [];
+      for (const lib of externalLibs) {
+        if (getGroundTruth(sessionId, lib)) {
+          withTruth.push(lib);
+        } else {
+          withoutTruth.push(lib);
+        }
+      }
+
+      // Fallback: also check transcript for library mentions (backward compat)
+      const stillMissing = [];
+      if (withoutTruth.length > 0) {
+        const { researched } = checkResearchForLibs(transcriptPath, withoutTruth);
+        for (const lib of withoutTruth) {
+          if (researched.includes(lib)) {
+            withTruth.push(lib);
+          } else {
+            stillMissing.push(lib);
+          }
+        }
+      }
+
+      if (stillMissing.length > 0) {
+        recordPending(sessionId, 'research', filePath, stillMissing);
+
+        const libList = stillMissing.slice(0, 5).join(', ');
+        const more = stillMissing.length > 5 ? ' (+' + (stillMissing.length - 5) + ' more)' : '';
+        const reason =
+          'GROUND TRUTH MISSING — libraries used without research: ' + libList + more + '\n' +
+          'File: ' + filePath + '\n\n' +
+          'REQUIRED: WebSearch/context7 for each library BEFORE writing code.\n' +
+          'Search for docs, verify API signatures, then write.' +
+          (withTruth.length > 0 ? '\nAlready researched: ' + withTruth.join(', ') : '');
+
+        // research-mandatory: budget=1 → first violation = immediate T2 deny
+        const result = peckEvaluateV2(sessionId, 'research-mandatory', filePath, reason, {
+          confidence: 'HIGH',
+          severity: 'ALWAYS',
+          level,
+          source: '',       // skip context detection — always enforce
+          matchIndex: -1,
+          domainActive: true,
+          patternName: 'research-mandatory-' + stillMissing[0],
+        });
+        if (result.suppressed || !result.message) { process.exit(0); }
+        logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'research-mandatory-tier' + result.tier, details: { missing: stillMissing, researched: withTruth } });
+        emitPeckResult(result);
+        return;
+      }
+
+      // All libs have ground truth — inject snippets as context + record compliance
+      const snippetContext = [];
+      for (const lib of withTruth.slice(0, 3)) {
+        const gt = getGroundTruth(sessionId, lib);
+        if (gt && gt.snippets && gt.snippets.length > 0) {
+          snippetContext.push('[' + lib + '] ' + gt.snippets[0].substring(0, 200));
+        }
+      }
+      if (snippetContext.length > 0) {
+        const ctxMsg = '[GROUND TRUTH] Relevant docs for your code:\n' + snippetContext.join('\n');
+        process.stderr.write('[WRITE-GUARD] ' + ctxMsg + '\n');
+        // Inject as additional context so Claude sees docs alongside writing
+        const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
+          additionalContext: ctxMsg }};
+        process.stdout.write(JSON.stringify(out));
+        // Don't exit — continue to security checks
+      }
+
+      peckRecordComplianceV2(sessionId, 'research-mandatory', filePath, 'HIGH');
+      peckRecordComplianceV2(sessionId, 'research', filePath, 'MEDIUM');
+    } else if (checkResearch(transcriptPath)) {
+      peckRecordComplianceV2(sessionId, 'research', filePath, 'MEDIUM');
+    }
   }
 
-  // Research done — record compliance to decay violations
-  if (hasImports(source) && !isStdlibOnly(source) && checkResearch(transcriptPath)) {
-    peckRecordCompliance(sessionId, 'research', filePath);
-  }
-
-  // ── CHECK 3: SECURITY SCAN (PECK escalation) ──
+  // ── CHECK 3: SECURITY SCAN (PECK v2 escalation) ──
   const secIssues = scanSecurity(source);
   if (secIssues.length > 0) {
     const reason =
@@ -264,7 +412,16 @@ async function main() {
       secIssues.map(s => `  - ${s}`).join('\n') + '\n' +
       'File: ' + filePath;
 
-    const result = peckEvaluate(sessionId, 'security', filePath, reason);
+    const result = peckEvaluateV2(sessionId, 'security-patterns', filePath, reason, {
+      confidence: 'MEDIUM',
+      severity: 'STRICT',
+      level,
+      source,
+      matchIndex: -1,
+      domainActive: true,
+      patternName: 'security-' + secIssues[0].replace(/\s+/g, '-').toLowerCase(),
+    });
+    if (result.suppressed || !result.message) { process.exit(0); }
     logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'security-tier' + result.tier, details: { issues: secIssues } });
     emitPeckResult(result);
     return;

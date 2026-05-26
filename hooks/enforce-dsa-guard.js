@@ -31,6 +31,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { recordPending, readState, isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent, isSkippedExtension, isExemptFilePath } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // DSA CODE PATTERNS — triggers the check
@@ -330,7 +331,8 @@ async function main() {
     process.stdout.write(JSON.stringify(out));
     process.exit(0);
   }
-  // Tier 0 or 1: approve + context
+  // Tier 0 or 1: approve + dual output (stderr for user, context for Claude)
+  process.stderr.write('[DSA-GUARD] ' + result.message + '\n');
   const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
     additionalContext: result.message }};
   process.stdout.write(JSON.stringify(out));

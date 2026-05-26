@@ -6,11 +6,13 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 
 - `hooks/` — Core logic (activate, detect, config, rules, tracker, skill-loader) + installers + statusline scripts
 - `hooks/enforce-skill-loader.js` — PECK-integrated skill loading enforcement (PreToolUse)
+- `hooks/enforce-research-capture.js` — PostToolUse search result capture for GTC scoring
+- `hooks/enforce-post-write-check.js` — PostToolUse compliance check after Write/Edit
 - `hooks/domains/` — Modular domain pattern files (v3: 30 domains, 83 patterns)
 - `rules/` — Rule markdown files: `universal.md` + `domains/*.md` (41 domains)
 - `skills/enforce/SKILL.md` — Source of truth for all rule definitions
 - `commands/enforce.toml` — `/enforce` slash command
-- `tests/` — 221 tests across 11 suites
+- `tests/` — 270 tests across 13 suites
 - `.claude-plugin/` — Plugin manifest for Claude Code marketplace
 
 ## Key Patterns
@@ -26,10 +28,10 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 ## Testing
 
 ```bash
-node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js
+node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js && node tests/test-gtc.js
 ```
 
-All 231 tests across 12 suites must pass before committing.
+All 270 tests across 13 suites must pass before committing.
 
 ## Adding Domains (v3)
 
@@ -66,6 +68,10 @@ Confidence-weighted, level-aware escalation with safety mechanisms:
 - **Modular loading**: patterns from `hooks/domains/*.js`, fallback to built-in
 - **Context domain cap**: max 4 domains in system prompt (budget guarantee)
 - **Skill loading enforcement**: PECK-integrated PreToolUse hook (ALWAYS severity, full T0→T3 at all levels, no level cap)
+- **Dual output**: All T0/T1 messages output to both stderr (user terminal) and additionalContext (Claude)
+- **Ground truth capture**: PostToolUse captures WebSearch/WebFetch results into state.groundTruth
+- **Research-mandatory gate**: budget=1, HIGH confidence, ALWAYS severity — immediate T2 deny for unresearched libraries
+- **GTC scoring**: Ground Truth Confidence score (0-100) computed per response from 6 signals, displayed via stderr
 
 ### Level Matrix
 
