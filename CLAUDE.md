@@ -8,6 +8,7 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 - `hooks/enforce-skill-loader.js` — PECK-integrated skill loading enforcement (PreToolUse)
 - `hooks/enforce-research-capture.js` — PostToolUse search result capture for GTC scoring
 - `hooks/enforce-post-write-check.js` — PostToolUse compliance check after Write/Edit
+- `hooks/enforce-session-log.js` — Stop hook that persists session activity to `.claude/session_logs.md`
 - `hooks/domains/` — Modular domain pattern files (v3: 30 domains, 83 patterns)
 - `rules/` — Rule markdown files: `universal.md` + `domains/*.md` (41 domains)
 - `skills/enforce/SKILL.md` — Source of truth for all rule definitions

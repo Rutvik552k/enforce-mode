@@ -130,6 +130,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-stop-guard.js",
             "timeout": 10,
             "statusMessage": "Running pre-completion checks..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-session-log.js",
+            "timeout": 5,
+            "statusMessage": "Logging session activity..."
           }
         ]
       }
