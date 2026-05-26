@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"/></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/Tests-299%20passing-brightgreen.svg" alt="Tests: 299 passing"/></a>
   <a href="#how-it-works"><img src="https://img.shields.io/badge/Node.js-stdlib%20only-339933.svg" alt="Node.js"/></a>
   <a href="#installation"><img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg" alt="Platform"/></a>
 </p>
@@ -262,35 +261,6 @@ Warns → Blocks → Hard-stops on repeated violations
 
 ---
 
-## Testing
-
-```bash
-# Run all 299 tests across 14 suites
-node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && \
-node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && \
-node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && \
-node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js && \
-node tests/test-gtc.js && node tests/test-e2e-integration.js
-```
-
-| Suite | Tests | What it covers |
-|-------|-------|---------------|
-| test-config | 8 | Configuration loading |
-| test-detect | 13 | Domain detection v1 |
-| test-detect-v2 | 11 | Domain detection v2+v3 |
-| test-rules | 18 | Rule loading + level filtering |
-| test-compress | 11 | Context compression |
-| test-peck | 28 | PECK v1 escalation engine |
-| test-peck-v2 | 35 | PECK v2 confidence weighting |
-| test-deadlocks | 20 | Deadlock prevention fixes |
-| test-domain-guard | 20 | Domain pattern enforcement |
-| test-peck-v3 | 27 | Level-aware severity + safety valve |
-| test-skill-loader | 30 | Skill loading + anti-evasion |
-| test-log | 10 | Event logging |
-| test-gtc | 39 | Ground truth + GTC scoring |
-| test-e2e-integration | 29 | Full pipeline integration |
-
----
 
 ## Adding Your Own Rules
 
