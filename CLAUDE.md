@@ -65,7 +65,7 @@ Confidence-weighted, level-aware escalation with safety mechanisms:
 - **Dynamic budgets**: auto-calculated from patternCount × (1 - avgConfidence) × 2
 - **Modular loading**: patterns from `hooks/domains/*.js`, fallback to built-in
 - **Context domain cap**: max 4 domains in system prompt (budget guarantee)
-- **Skill loading enforcement**: PECK-integrated skill suggestions (WARN severity, all levels)
+- **Skill loading enforcement**: PECK-integrated PreToolUse hook (ALWAYS severity, full T0→T3 at all levels, no level cap)
 
 ### Level Matrix
 
