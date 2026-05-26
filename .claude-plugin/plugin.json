@@ -23,6 +23,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-activate.js",
             "timeout": 10,
             "statusMessage": "Loading enforce-mode..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-session-resume.js",
+            "timeout": 5,
+            "statusMessage": "Loading previous session..."
           }
         ]
       }
@@ -130,6 +136,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-session-log.js",
             "timeout": 5,
             "statusMessage": "Logging session activity..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-session-save.js",
+            "timeout": 10,
+            "statusMessage": "Saving session data..."
           },
           {
             "type": "command",

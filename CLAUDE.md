@@ -9,11 +9,13 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 - `hooks/enforce-research-capture.js` — PostToolUse search result capture for GTC scoring
 - `hooks/enforce-post-write-check.js` — PostToolUse compliance check after Write/Edit
 - `hooks/enforce-session-log.js` — Stop hook that persists session activity to `.claude/session_logs.md`
+- `hooks/enforce-session-save.js` — Stop hook that auto-saves session summary to `~/.claude/session-data/`
+- `hooks/enforce-session-resume.js` — SessionStart hook that loads previous session context
 - `hooks/domains/` — Modular domain pattern files (v3: 30 domains, 83 patterns)
 - `rules/` — Rule markdown files: `universal.md` + `domains/*.md` (41 domains)
 - `skills/enforce/SKILL.md` — Source of truth for all rule definitions
 - `commands/enforce.toml` — `/enforce` slash command
-- `tests/` — 270 tests across 13 suites
+- `tests/` — 304 tests across 14 suites
 - `.claude-plugin/` — Plugin manifest for Claude Code marketplace
 
 ## Key Patterns
@@ -29,7 +31,7 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 ## Testing
 
 ```bash
-node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js && node tests/test-gtc.js
+node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js && node tests/test-gtc.js && node tests/test-session-save-resume.js
 ```
 
 All 270 tests across 13 suites must pass before committing.

@@ -378,8 +378,8 @@ async function main() {
     process.stderr.write(logLines.join('\n') + '\n');
   }
 
-  // ── GTC SCORE (Ground Truth Confidence) — every response with code writes ──
-  if (sessionId && analysis.hasCodeWrites) {
+  // ── GTC SCORE (Ground Truth Confidence) — every response ──
+  if (sessionId) {
     // Extract external libs from transcript (libraries that were written)
     const externalLibs = [];
     const apiCalls = [];
