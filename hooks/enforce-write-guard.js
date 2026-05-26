@@ -328,10 +328,13 @@ async function main() {
 
     if (externalLibs.length > 0) {
       // Check ground truth (captured search results) per library
+      // TTL: ground truth expires after 30 minutes — forces re-search
+      const GT_TTL_MS = 30 * 60 * 1000;
       const withTruth = [];
       const withoutTruth = [];
       for (const lib of externalLibs) {
-        if (getGroundTruth(sessionId, lib)) {
+        const gt = getGroundTruth(sessionId, lib);
+        if (gt && (Date.now() - gt.ts) < GT_TTL_MS) {
           withTruth.push(lib);
         } else {
           withoutTruth.push(lib);
