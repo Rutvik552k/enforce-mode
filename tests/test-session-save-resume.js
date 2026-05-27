@@ -13,8 +13,26 @@ const {
   readState, writeState, recordGroundTruth,
 } = require('../hooks/enforce-state');
 
+const { getConfigPath } = require('../hooks/enforce-config');
+
 const SESSION_DIR = path.join(os.homedir(), '.claude', 'session-data');
 const PROJECT_NAME = path.basename(process.cwd());
+
+// Backup config + settings — session-save now persists level to both
+const configPath = getConfigPath();
+const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+let configBackup = null;
+let settingsBackup = null;
+try {
+  if (fs.existsSync(configPath)) {
+    configBackup = fs.readFileSync(configPath, 'utf8');
+  }
+} catch {}
+try {
+  if (fs.existsSync(settingsPath)) {
+    settingsBackup = fs.readFileSync(settingsPath, 'utf8');
+  }
+} catch {}
 
 let passed = 0, failed = 0;
 function assert(cond, msg) {
@@ -358,6 +376,22 @@ if (backupContent !== null) {
     fs.writeFileSync(sessionFilePath, backupContent, 'utf8');
   } catch {}
 }
+
+// Restore config file — undo any level persistence from test runs
+try {
+  if (configBackup !== null) {
+    fs.writeFileSync(configPath, configBackup, 'utf8');
+  } else if (fs.existsSync(configPath)) {
+    fs.unlinkSync(configPath);
+  }
+} catch {}
+
+// Restore settings.json — undo plugin settings changes from test runs
+try {
+  if (settingsBackup !== null) {
+    fs.writeFileSync(settingsPath, settingsBackup, 'utf8');
+  }
+} catch {}
 
 console.log('\n' + '='.repeat(40));
 console.log('Results: ' + passed + ' passed, ' + failed + ' failed');

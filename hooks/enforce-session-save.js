@@ -26,6 +26,7 @@ const {
   isActive, getLevel, readState, getLog, getGTCScores,
   getResearchedLibs, peckGetSummary, getDeadLetters,
 } = require('./enforce-state');
+const { setDefaultLevel } = require('./enforce-config');
 
 // ═══════════════════════════════════════════════════════════
 // CONFIG
@@ -299,6 +300,12 @@ async function main() {
   const sessionId = input.session_id || '';
 
   if (!sessionId || !isActive(sessionId)) process.exit(0);
+
+  // Persist current session level to config so next session inherits it
+  const currentLevel = getLevel(sessionId);
+  if (currentLevel) {
+    setDefaultLevel(currentLevel);
+  }
 
   const state = readState(sessionId);
   const log = getLog(sessionId);
