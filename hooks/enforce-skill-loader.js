@@ -4,6 +4,8 @@
  *
  * PECK-integrated: uses peckEvaluateV2() with ALWAYS severity (v3 — full T0→T3 at all levels).
  *
+ * SKILL RESOLUTION: Fully dynamic via enforce-skill-registry.js (zero hardcoded maps).
+ *
  * TRIGGERS:
  *   - Write|Edit|NotebookEdit → file type + content → suggest skills
  *   - WebSearch|WebFetch|Agent → research context → suggest skills
@@ -40,161 +42,10 @@ const {
 } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DYNAMIC SKILL DISCOVERY — scans ~/.claude/skills/ for non-ECC skills
+// DYNAMIC SKILL RESOLUTION — fully dynamic, zero hardcoded skill maps
 // ═══════════════════════════════════════════════════════════════════════════
 
-const os = require('os');
-const SKILLS_DIR = path.join(os.homedir(), '.claude', 'skills');
-
-// Plugins to exclude (infrastructure, not code review skills)
-const EXCLUDED_PLUGINS = new Set(['enforce-mode', 'caveman', 'learned']);
-
-// Keyword → extension mapping for dynamic skills
-const KEYWORD_EXT_MAP = {
-  // Frontend
-  'react': ['.tsx', '.jsx'], 'next.js': ['.tsx', '.ts'], 'nextjs': ['.tsx', '.ts'],
-  'vue': ['.vue'], 'svelte': ['.svelte'], 'angular': ['.ts'],
-  'tailwind': ['.tsx', '.jsx', '.css'], 'css': ['.css', '.scss'],
-  'html': ['.html'], 'frontend': ['.tsx', '.jsx', '.ts', '.js'],
-  // Backend
-  'express': ['.ts', '.js'], 'fastapi': ['.py'], 'django': ['.py'],
-  'flask': ['.py'], 'nestjs': ['.ts'], 'spring': ['.java'],
-  'laravel': ['.php'], 'rails': ['.rb'],
-  // Languages
-  'typescript': ['.ts', '.tsx'], 'javascript': ['.js', '.jsx'],
-  'python': ['.py'], 'go': ['.go'], 'golang': ['.go'],
-  'rust': ['.rs'], 'kotlin': ['.kt', '.kts'], 'java': ['.java'],
-  'swift': ['.swift'], 'dart': ['.dart'], 'flutter': ['.dart'],
-  'c++': ['.cpp', '.c', '.h', '.hpp'], 'c#': ['.cs'], 'csharp': ['.cs'],
-  'ruby': ['.rb'], 'php': ['.php'], 'scala': ['.scala'],
-  'elixir': ['.ex', '.exs'], 'perl': ['.pl'],
-  // Infrastructure
-  'docker': ['Dockerfile'], 'kubernetes': ['.yaml', '.yml'],
-  'terraform': ['.tf'], 'ci/cd': ['.yml', '.yaml'],
-  // Data
-  'sql': ['.sql'], 'postgres': ['.sql'], 'database': ['.sql'],
-  'graphql': ['.graphql', '.gql'],
-  // Testing
-  'test': ['.ts', '.js', '.py'], 'playwright': ['.ts', '.js'],
-  'jest': ['.ts', '.js'], 'pytest': ['.py'],
-  // Security
-  'security': ['.ts', '.js', '.py', '.go', '.rs', '.java'],
-  'solidity': ['.sol'], 'smart contract': ['.sol'],
-};
-
-// Content keyword → skill mapping for dynamic skills
-const CONTENT_KEYWORDS = {
-  'security': ['auth', 'jwt', 'bcrypt', 'crypto', 'passport', 'oauth'],
-  'database': ['prisma', 'sequelize', 'typeorm', 'knex', 'mongoose', 'sql'],
-  'api': ['express', 'fastapi', 'router', 'endpoint', 'rest', 'graphql'],
-  'testing': ['describe', 'it(', 'test(', 'expect', 'assert', 'beforeEach'],
-  'frontend': ['useState', 'useEffect', 'component', 'render', 'jsx'],
-  'devops': ['docker', 'kubernetes', 'deploy', 'pipeline', 'ci/cd'],
-};
-
-/**
- * Discover skills from ~/.claude/skills/ directory.
- * Returns { extMap: {ext: [skills]}, contentMap: [{keywords, skills}], researchMap: [{keywords, skills}] }
- * Cached at module load — rebuilds only if dir changes.
- */
-let _dynamicSkillsCache = null;
-let _dynamicSkillsCacheTime = 0;
-
-function discoverDynamicSkills() {
-  // Cache for 5 minutes
-  if (_dynamicSkillsCache && (Date.now() - _dynamicSkillsCacheTime) < 300000) {
-    return _dynamicSkillsCache;
-  }
-
-  const extMap = {};      // { '.ts': ['senior-frontend', 'playwright-pro'] }
-  const contentMap = [];  // [{ keywords: ['auth','jwt'], skills: ['security-pen-testing'] }]
-  const researchMap = []; // [{ keywords: ['security','vulnerability'], skills: ['security-pen-testing'] }]
-
-  try {
-    if (!fs.existsSync(SKILLS_DIR)) return { extMap, contentMap, researchMap };
-
-    const dirs = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
-    for (const entry of dirs) {
-      const fullPath = path.join(SKILLS_DIR, entry.name);
-      let isDir = entry.isDirectory();
-      if (!isDir && entry.isSymbolicLink()) {
-        try { isDir = fs.statSync(fullPath).isDirectory(); } catch { continue; }
-      }
-      if (!isDir) continue;
-
-      const skillName = entry.name;
-      if (EXCLUDED_PLUGINS.has(skillName)) continue;
-
-      // Skip ECC skills (already in hardcoded maps)
-      if (skillName.startsWith('ecc-') || skillName.startsWith('ecc:')) continue;
-
-      const skillPath = path.join(SKILLS_DIR, skillName, 'SKILL.md');
-      try {
-        if (!fs.existsSync(skillPath)) continue;
-        const raw = fs.readFileSync(skillPath, 'utf8').substring(0, 2000); // first 2KB only
-
-        // Extract description from frontmatter
-        const descMatch = raw.match(/description:\s*["']?(.+?)["']?\s*$/im);
-        const description = descMatch ? descMatch[1].toLowerCase() : '';
-        const nameAndDesc = (skillName + ' ' + description).toLowerCase();
-
-        // Match keywords to extensions
-        const matchedExts = new Set();
-        const matchedContentKw = new Set();
-        const matchedResearchKw = new Set();
-
-        for (const [keyword, exts] of Object.entries(KEYWORD_EXT_MAP)) {
-          if (nameAndDesc.includes(keyword)) {
-            for (const ext of exts) matchedExts.add(ext);
-          }
-        }
-
-        for (const [category, keywords] of Object.entries(CONTENT_KEYWORDS)) {
-          if (nameAndDesc.includes(category)) {
-            for (const kw of keywords) matchedContentKw.add(kw);
-          }
-        }
-
-        // Research keywords from description
-        const descWords = nameAndDesc.split(/[\s,./()-]+/).filter(w => w.length > 3);
-        for (const w of descWords.slice(0, 20)) {
-          if (!['when', 'with', 'that', 'this', 'from', 'have', 'been', 'will', 'used',
-                'your', 'code', 'skill', 'use'].includes(w)) {
-            matchedResearchKw.add(w);
-          }
-        }
-
-        // Register in maps
-        if (matchedExts.size > 0) {
-          for (const ext of matchedExts) {
-            if (!extMap[ext]) extMap[ext] = [];
-            extMap[ext].push(skillName);
-          }
-        }
-
-        if (matchedContentKw.size > 0) {
-          contentMap.push({
-            keywords: [...matchedContentKw],
-            skills: [skillName],
-            label: skillName,
-          });
-        }
-
-        if (matchedResearchKw.size > 0) {
-          researchMap.push({
-            keywords: [...matchedResearchKw].slice(0, 10),
-            skills: [skillName],
-            label: skillName,
-          });
-        }
-      } catch { continue; }
-    }
-  } catch { /* silent — dynamic discovery is best-effort */ }
-
-  _dynamicSkillsCache = { extMap, contentMap, researchMap };
-  _dynamicSkillsCacheTime = Date.now();
-  return _dynamicSkillsCache;
-}
+const { resolveWriteSkills, resolveResearchSkills } = require('./enforce-skill-registry');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOOL GROUPS
@@ -212,160 +63,6 @@ const MIN_SOURCE_LENGTH = 5;           // v2: lowered from 20 (prevents tiny-fil
 const MAX_COMPLIANCE_PER_SESSION = 3;  // v2: cap forgiveness decays per session
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FILE EXTENSION → SKILLS MAP
-// ═══════════════════════════════════════════════════════════════════════════
-
-const EXT_SKILL_MAP = {
-  // TypeScript / JavaScript
-  '.ts':     ['ecc:code-review', 'ecc:tdd-workflow'],
-  '.tsx':    ['ecc:code-review', 'ecc:senior-frontend', 'ecc:tdd-workflow'],
-  '.js':     ['ecc:code-review', 'ecc:tdd-workflow'],
-  '.jsx':    ['ecc:code-review', 'ecc:senior-frontend', 'ecc:tdd-workflow'],
-  '.mjs':    ['ecc:code-review'],
-  '.vue':    ['ecc:code-review', 'ecc:senior-frontend'],
-  '.svelte': ['ecc:code-review', 'ecc:senior-frontend'],
-
-  // Python
-  '.py':     ['ecc:python-review', 'ecc:tdd-workflow'],
-  '.pyx':    ['ecc:python-review'],
-  '.ipynb':  ['ecc:python-review'],
-
-  // Go
-  '.go':     ['ecc:go-review', 'ecc:go-test'],
-
-  // Rust
-  '.rs':     ['ecc:rust-review', 'ecc:rust-test'],
-
-  // Kotlin
-  '.kt':     ['ecc:kotlin-review', 'ecc:kotlin-test'],
-  '.kts':    ['ecc:kotlin-review'],
-
-  // Java
-  '.java':   ['ecc:code-review', 'ecc:tdd-workflow'],
-
-  // C#
-  '.cs':     ['ecc:code-review', 'ecc:tdd-workflow'],
-
-  // Dart / Flutter
-  '.dart':   ['ecc:flutter-review', 'ecc:flutter-test'],
-
-  // C / C++
-  '.c':      ['ecc:cpp-review', 'ecc:cpp-test'],
-  '.cpp':    ['ecc:cpp-review', 'ecc:cpp-test'],
-  '.h':      ['ecc:cpp-review'],
-  '.hpp':    ['ecc:cpp-review'],
-
-  // Swift
-  '.swift':  ['ecc:code-review'],
-
-  // SQL
-  '.sql':    ['ecc:code-review', 'ecc:postgres-patterns'],
-
-  // Solidity
-  '.sol':    ['ecc:security-review'],
-
-  // Infrastructure
-  '.tf':     ['ecc:senior-devops', 'ecc:deployment-patterns'],
-
-  // Ruby
-  '.rb':     ['ecc:code-review', 'ecc:tdd-workflow'],
-
-  // PHP
-  '.php':    ['ecc:code-review', 'ecc:tdd-workflow'],
-
-  // Scala
-  '.scala':  ['ecc:code-review'],
-
-  // Elixir
-  '.ex':     ['ecc:code-review'],
-  '.exs':    ['ecc:code-review'],
-
-  // Perl
-  '.pl':     ['ecc:code-review'],
-
-  // Lua
-  '.lua':    ['ecc:code-review'],
-
-  // R
-  '.r':      ['ecc:code-review'],
-  '.R':      ['ecc:code-review'],
-
-  // Julia
-  '.jl':     ['ecc:code-review'],
-
-  // Groovy
-  '.groovy': ['ecc:code-review'],
-};
-
-// Special filename matches (no extension-based)
-const FILENAME_SKILL_MAP = {
-  'Dockerfile':          ['ecc:docker-patterns', 'ecc:senior-devops'],
-  'docker-compose.yml':  ['ecc:docker-patterns', 'ecc:senior-devops'],
-  'docker-compose.yaml': ['ecc:docker-patterns', 'ecc:senior-devops'],
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CONTENT PATTERN → SKILLS MAP
-// ═══════════════════════════════════════════════════════════════════════════
-
-const CONTENT_SKILL_MAP = [
-  // Require code-like context (function calls, assignments, imports) — not just keywords
-  { regex: /(?:jwt\.(?:sign|verify|decode)|bcrypt\.(?:hash|compare)|crypto\.(?:create|random)|passport\.|authMiddleware|isAuthenticated)\s*\(/i,
-    skills: ['ecc:security-review'], label: 'auth/security' },
-
-  { regex: /(?:prisma|sequelize|typeorm|knex|mongoose)\.\w+\s*\(|\.(?:query|execute)\s*\(\s*['"`]/,
-    skills: ['ecc:postgres-patterns'], label: 'database ops' },
-
-  { regex: /^FROM\s+\w+|^RUN\s+/m,
-    skills: ['ecc:docker-patterns'], label: 'Dockerfile' },
-
-  { regex: /(?:CREATE\s+TABLE|ALTER\s+TABLE)\s+\w+|knex\.schema\.\w+\s*\(/i,
-    skills: ['ecc:database-migrations'], label: 'migration' },
-
-  { regex: /(?:describe|it|test|expect|assert|beforeEach|afterEach)\s*\(\s*['"`]/,
-    skills: ['ecc:tdd-workflow'], label: 'test code' },
-
-  { regex: /(?:playwright|page\.goto|page\.click|cy\.\w+|cypress)\s*\(/i,
-    skills: ['ecc:e2e-testing'], label: 'E2E test' },
-
-  { regex: /(?:useState|useEffect|useContext|getServerSideProps|getStaticProps)\s*\(/,
-    skills: ['ecc:senior-frontend'], label: 'React/Next.js' },
-
-  { regex: /(?:app\.(get|post|put|delete)|@(Get|Post|Put|Delete)\(|router\.(get|post))\s*\(/,
-    skills: ['ecc:senior-backend'], label: 'API endpoint' },
-
-  { regex: /(?:openai|anthropic|langchain|llamaindex|@ai-sdk)\.\w+|(?:chat|completions?)\.create\s*\(/i,
-    skills: ['ecc:ai-security'], label: 'LLM integration' },
-];
-
-// ═══════════════════════════════════════════════════════════════════════════
-// RESEARCH QUERY → SKILLS MAP
-// ═══════════════════════════════════════════════════════════════════════════
-
-const RESEARCH_SKILL_MAP = [
-  { regex: /(?:security|vulnerability|CVE|exploit|OWASP)/i,
-    skills: ['ecc:security-review'], label: 'security' },
-
-  { regex: /(?:deploy|CI|CD|pipeline|kubernetes|k8s|docker|helm)/i,
-    skills: ['ecc:senior-devops'], label: 'deployment' },
-
-  { regex: /(?:database|SQL|schema|migration|postgres|mysql|mongo)/i,
-    skills: ['ecc:postgres-patterns'], label: 'database' },
-
-  { regex: /(?:react|next\.?js|vue|svelte|frontend|CSS|tailwind)/i,
-    skills: ['ecc:senior-frontend'], label: 'frontend' },
-
-  { regex: /(?:API|REST|GraphQL|endpoint|backend|server)/i,
-    skills: ['ecc:senior-backend'], label: 'backend' },
-
-  { regex: /(?:test|testing|jest|vitest|pytest|coverage)/i,
-    skills: ['ecc:tdd-workflow'], label: 'testing' },
-
-  { regex: /(?:architect|design|pattern|microservice|monolith)/i,
-    skills: ['ecc:senior-architect'], label: 'architecture' },
-];
-
-// ═══════════════════════════════════════════════════════════════════════════
 // SELF-EXEMPTION (v2: narrowed — only hook files, NOT test files)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -373,74 +70,6 @@ const RESEARCH_SKILL_MAP = [
 
 function isCodeFile(fp) {
   return fp && !isSkippedExtension(fp);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SKILL RESOLUTION
-// ═══════════════════════════════════════════════════════════════════════════
-
-function resolveWriteSkills(filePath, source) {
-  const skills = new Set();
-
-  // 1. Extension-based (hardcoded ECC)
-  const ext = path.extname(filePath).toLowerCase();
-  const extSkills = EXT_SKILL_MAP[ext];
-  if (extSkills) extSkills.forEach(s => skills.add(s));
-
-  // 2. Filename-based (Dockerfile, docker-compose.yml, etc.)
-  const basename = path.basename(filePath);
-  const fnSkills = FILENAME_SKILL_MAP[basename];
-  if (fnSkills) fnSkills.forEach(s => skills.add(s));
-
-  // 3. Content-based (hardcoded ECC)
-  for (const entry of CONTENT_SKILL_MAP) {
-    if (entry.regex.test(source)) {
-      entry.skills.forEach(s => skills.add(s));
-    }
-  }
-
-  // 4. Dynamic discovery (non-ECC marketplace/user skills)
-  const dynamic = discoverDynamicSkills();
-
-  // 4a. Dynamic extension match
-  const dynExtSkills = dynamic.extMap[ext];
-  if (dynExtSkills) dynExtSkills.forEach(s => skills.add(s));
-
-  // 4b. Dynamic filename match
-  const dynFnSkills = dynamic.extMap[basename];
-  if (dynFnSkills) dynFnSkills.forEach(s => skills.add(s));
-
-  // 4c. Dynamic content keyword match
-  const sourceLower = source.toLowerCase();
-  for (const entry of dynamic.contentMap) {
-    if (entry.keywords.some(kw => sourceLower.includes(kw))) {
-      entry.skills.forEach(s => skills.add(s));
-    }
-  }
-
-  return [...skills];
-}
-
-function resolveResearchSkills(query) {
-  const skills = new Set();
-
-  // 1. Hardcoded ECC research map
-  for (const entry of RESEARCH_SKILL_MAP) {
-    if (entry.regex.test(query)) {
-      entry.skills.forEach(s => skills.add(s));
-    }
-  }
-
-  // 2. Dynamic discovery (non-ECC marketplace/user skills)
-  const dynamic = discoverDynamicSkills();
-  const queryLower = query.toLowerCase();
-  for (const entry of dynamic.researchMap) {
-    if (entry.keywords.some(kw => queryLower.includes(kw))) {
-      entry.skills.forEach(s => skills.add(s));
-    }
-  }
-
-  return [...skills];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -470,7 +99,7 @@ function checkSkillCompliance(transcriptPath, requiredSkills) {
     const STRUCTURED_PATTERNS = [
       /["']?tool_name["']?\s*:\s*["']Skill["']/g,       // JSON: "tool_name":"Skill"
       /tool_name.*?Skill/g,                               // loose structured match
-      /"skill"\s*:\s*["']ecc:/g,                          // Skill tool args: "skill":"ecc:..."
+      /"skill"\s*:\s*["'][a-z0-9]/g,                        // Skill tool args: "skill":"<any-skill>"
     ];
 
     const hasStructuredInvocation = STRUCTURED_PATTERNS.some(p => p.test(content));
@@ -480,7 +109,7 @@ function checkSkillCompliance(transcriptPath, requiredSkills) {
     }
 
     // Extract which specific skills were invoked from structured args
-    const skillArgPattern = /["']skill["']\s*:\s*["'](ecc:[a-z0-9-]+)["']/g;
+    const skillArgPattern = /["']skill["']\s*:\s*["']([a-z0-9][a-z0-9:_-]*)["']/g;
     const loaded = [];
     let match;
     while ((match = skillArgPattern.exec(content)) !== null) {

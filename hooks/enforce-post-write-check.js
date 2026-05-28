@@ -20,25 +20,10 @@ const path = require('path');
 const { isActive, getLevel, logEvent, isSkippedExtension, isExemptFilePath } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
-// SKILL MAP (subset — most impactful skills only)
+// DYNAMIC SKILL RESOLUTION (via shared registry)
 // ═══════════════════════════════════════════════════════════
 
-const EXT_SKILL_MAP = {
-  '.ts':   ['ecc:code-review'],
-  '.tsx':  ['ecc:code-review', 'ecc:senior-frontend'],
-  '.js':   ['ecc:code-review'],
-  '.jsx':  ['ecc:code-review', 'ecc:senior-frontend'],
-  '.py':   ['ecc:python-review'],
-  '.go':   ['ecc:go-review'],
-  '.rs':   ['ecc:rust-review'],
-  '.kt':   ['ecc:kotlin-review'],
-  '.dart': ['ecc:flutter-review'],
-  '.cpp':  ['ecc:cpp-review'],
-  '.c':    ['ecc:cpp-review'],
-  '.java': ['ecc:code-review'],
-  '.cs':   ['ecc:code-review'],
-  '.sol':  ['ecc:security-review'],
-};
+const { resolveWriteSkills } = require('./enforce-skill-registry');
 
 // ═══════════════════════════════════════════════════════════
 // TRANSCRIPT SKILL CHECK
@@ -55,7 +40,7 @@ function checkSkillsInTranscript(transcriptPath, requiredSkills) {
     if (!hasStructured) return { loaded: false, skills: [] };
 
     // Extract loaded skills
-    const skillPattern = /["']skill["']\s*:\s*["'](ecc:[a-z0-9-]+)["']/g;
+    const skillPattern = /["']skill["']\s*:\s*["']([a-z0-9][a-z0-9:_-]*)["']/g;
     const skills = [];
     let match;
     while ((match = skillPattern.exec(content)) !== null) {
@@ -162,14 +147,13 @@ async function main() {
 
   const warnings = [];
 
-  // ── CHECK 1: Skill compliance ──
-  const ext = path.extname(filePath).toLowerCase();
-  const requiredSkills = EXT_SKILL_MAP[ext] || [];
+  // ── CHECK 1: Skill compliance (dynamic resolution) ──
+  const requiredSkills = resolveWriteSkills(filePath, source);
   if (requiredSkills.length > 0) {
     const { loaded, skills } = checkSkillsInTranscript(transcriptPath, requiredSkills);
     if (!loaded) {
       const needed = requiredSkills.slice(0, 2).map(s => '/' + s).join(', ');
-      warnings.push('[POST-WRITE] Skills not loaded for ' + ext + ' file. Recommended: ' + needed);
+      warnings.push('[POST-WRITE] Skills not loaded for this file. Recommended: ' + needed);
     }
   }
 

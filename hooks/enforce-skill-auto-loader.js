@@ -9,9 +9,8 @@
  *   - New skills installed → auto-discovered on next cache rebuild
  *
  * MATCHING PIPELINE (tiered):
- *   Tier 1: Exact extension/filename match (static, fast — kept for precision)
+ *   Tier 1: Dynamic extension/filename/content via enforce-skill-registry.js
  *   Tier 2: BM25-lite token scoring against dynamic corpus
- *   Tier 3: Content pattern regex (high-value patterns kept static)
  *
  * AUTO-INJECTION:
  *   - Injects compressed skill summary as additionalContext
@@ -35,6 +34,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { isSkippedExtension, isExemptFilePath } = require('./enforce-state');
+const { resolveWriteSkills, collectSkillEntries } = require('./enforce-skill-registry');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -66,73 +66,10 @@ function isCodeFile(fp) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TIER 1: STATIC EXTENSION/FILENAME MAP (kept for speed + precision)
+// TIER 1: DYNAMIC EXTENSION/FILENAME MAP (via shared registry)
 // ═══════════════════════════════════════════════════════════════════════════
-
-const EXT_SKILL_MAP = {
-  '.ts': ['ecc:code-review', 'ecc:tdd-workflow'],
-  '.tsx': ['ecc:code-review', 'ecc:senior-frontend'],
-  '.js': ['ecc:code-review', 'ecc:tdd-workflow'],
-  '.jsx': ['ecc:code-review', 'ecc:senior-frontend'],
-  '.py': ['ecc:python-review', 'ecc:tdd-workflow'],
-  '.go': ['ecc:go-review', 'ecc:go-test'],
-  '.rs': ['ecc:rust-review', 'ecc:rust-test'],
-  '.kt': ['ecc:kotlin-review', 'ecc:kotlin-test'],
-  '.java': ['ecc:code-review', 'ecc:tdd-workflow'],
-  '.cs': ['ecc:code-review', 'ecc:tdd-workflow'],
-  '.dart': ['ecc:flutter-review', 'ecc:flutter-test'],
-  '.cpp': ['ecc:cpp-review', 'ecc:cpp-test'],
-  '.c': ['ecc:cpp-review', 'ecc:cpp-test'],
-  '.h': ['ecc:cpp-review'],
-  '.hpp': ['ecc:cpp-review'],
-  '.swift': ['ecc:code-review'],
-  '.sql': ['ecc:postgres-patterns'],
-  '.sol': ['ecc:security-review'],
-  '.tf': ['ecc:senior-devops', 'ecc:deployment-patterns'],
-  // Additional languages
-  '.rb': ['ecc:code-review'],
-  '.php': ['ecc:code-review'],
-  '.scala': ['ecc:code-review'],
-  '.ex': ['ecc:code-review'],
-  '.exs': ['ecc:code-review'],
-  '.lua': ['ecc:code-review'],
-  '.r': ['ecc:code-review'],
-  '.R': ['ecc:code-review'],
-  '.jl': ['ecc:code-review'],
-  '.groovy': ['ecc:code-review'],
-  '.pl': ['ecc:code-review'],
-};
-
-const FILENAME_SKILL_MAP = {
-  'Dockerfile': ['ecc:docker-patterns', 'ecc:senior-devops'],
-  'docker-compose.yml': ['ecc:docker-patterns', 'ecc:senior-devops'],
-  'docker-compose.yaml': ['ecc:docker-patterns', 'ecc:senior-devops'],
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// TIER 3: STATIC CONTENT PATTERNS (high-precision, kept for reliability)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const CONTENT_PATTERNS = [
-  { regex: /(?:jwt|bcrypt|crypto|auth|login|session|oauth|password)/i,
-    skill: 'security-pen-testing' },
-  { regex: /(?:prisma|sequelize|typeorm|knex|mongoose|\.query|\.execute|SELECT\s|INSERT\s)/,
-    skill: 'postgres-patterns' },
-  { regex: /^FROM\s+\w+|^RUN\s+/m,
-    skill: 'docker-patterns' },
-  { regex: /(?:CREATE\s+TABLE|ALTER\s+TABLE|migration|knex\.schema)/i,
-    skill: 'database-migrations' },
-  { regex: /(?:describe|it|test|expect|assert|beforeEach|afterEach)\s*\(/,
-    skill: 'tdd-guide' },
-  { regex: /(?:playwright|page\.goto|page\.click|cy\.|cypress)/i,
-    skill: 'e2e-testing' },
-  { regex: /(?:useState|useEffect|useContext|getServerSideProps|getStaticProps)/,
-    skill: 'senior-frontend' },
-  { regex: /(?:app\.(get|post|put|delete)|@(Get|Post|Put|Delete)\(|router\.(get|post))/,
-    skill: 'senior-backend' },
-  { regex: /(?:openai|anthropic|langchain|llamaindex|@ai-sdk|completion|chat\.create)/i,
-    skill: 'ai-security' },
-];
+// Extension and filename matching now fully dynamic via enforce-skill-registry.js.
+// No hardcoded skill maps — all derived from installed SKILL.md metadata.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TOKENIZER (shared between corpus builder and runtime matching)
@@ -187,11 +124,7 @@ function isCacheValid() {
     const stat = fs.statSync(CACHE_FILE);
     const age = Date.now() - stat.mtimeMs;
     if (age > CACHE_TTL_MS) return false;
-
-    // Check if skills dir was modified after cache
-    const dirStat = fs.statSync(SKILLS_DIR);
-    if (dirStat.mtimeMs > stat.mtimeMs) return false;
-
+    // TTL-only validation — multiple scan dirs make mtime checks complex
     return true;
   } catch { return false; }
 }
@@ -207,25 +140,12 @@ function loadCache() {
 
 function buildCorpus() {
   const corpus = {};
-  let dirs;
 
-  try {
-    dirs = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
-  } catch { return { version: 2, builtAt: Date.now(), skillsDir: SKILLS_DIR, corpus: {}, avgDocLen: 0 }; }
+  // Use shared registry to collect entries from ALL skill locations
+  const entries = collectSkillEntries();
 
-  for (const entry of dirs) {
-    // Support both real dirs and symlinks (Windows: isDirectory()=false for symlinks)
-    const fullPath = path.join(SKILLS_DIR, entry.name);
-    let isDir = entry.isDirectory();
-    if (!isDir && entry.isSymbolicLink()) {
-      try { isDir = fs.statSync(fullPath).isDirectory(); } catch { /* ignore */ }
-    }
-    if (!isDir) continue;
-    const skillDir = entry.name;
-    const skillPath = path.join(SKILLS_DIR, skillDir, 'SKILL.md');
-
+  for (const { name: skillDir, path: skillPath } of entries) {
     try {
-      if (!fs.existsSync(skillPath)) continue;
       const raw = fs.readFileSync(skillPath, 'utf8');
 
       // Extract description from frontmatter
@@ -452,24 +372,16 @@ function bm25Match(queryTokens, cacheData) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SKILL RESOLUTION (3-tier pipeline)
+// SKILL RESOLUTION (2-tier pipeline: dynamic registry + BM25)
 // ═══════════════════════════════════════════════════════════════════════════
 
 function resolveSkills(filePath, source, cacheData) {
   const candidates = new Map();
 
-  // Tier 1: Extension match (score 1.0)
-  const ext = path.extname(filePath).toLowerCase();
-  const extSkills = EXT_SKILL_MAP[ext] || [];
-  for (const s of extSkills) {
-    candidates.set(s, { score: 1.0, source: 'extension' });
-  }
-
-  // Tier 1b: Filename match (score 1.0)
-  const basename = path.basename(filePath);
-  const fnSkills = FILENAME_SKILL_MAP[basename] || [];
-  for (const s of fnSkills) {
-    if (!candidates.has(s)) candidates.set(s, { score: 1.0, source: 'filename' });
+  // Tier 1: Dynamic extension/filename/content from registry (score 1.0)
+  const registrySkills = resolveWriteSkills(filePath, source);
+  for (const s of registrySkills) {
+    candidates.set(s, { score: 1.0, source: 'registry' });
   }
 
   // Tier 2: BM25 dynamic scoring (limit input to 5KB for speed)
@@ -484,18 +396,8 @@ function resolveSkills(filePath, source, cacheData) {
     }
   }
 
-  // Tier 3: Content regex (score 0.95)
-  for (const { regex, skill } of CONTENT_PATTERNS) {
-    if (regex.test(source)) {
-      const existing = candidates.get(skill);
-      if (!existing || existing.score < 0.95) {
-        candidates.set(skill, { score: 0.95, source: 'content-pattern' });
-      }
-    }
-  }
-
-  // Sort: content-specific > bm25 > generic extension
-  const SOURCE_PRIORITY = { 'content-pattern': 3, 'bm25': 2, 'extension': 1, 'filename': 1 };
+  // Sort: bm25-specific > registry-generic
+  const SOURCE_PRIORITY = { 'bm25': 2, 'registry': 1 };
   return [...candidates.entries()]
     .map(([skill, data]) => ({ skill, ...data }))
     .sort((a, b) => {
