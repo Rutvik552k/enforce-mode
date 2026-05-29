@@ -27,6 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const { recordPending, isActive, getLevel, peckEvaluateV2, peckTick, peckRecordComplianceV2, logEvent, isSkippedExtension, isExemptFilePath, getGroundTruth, getResearchedLibs } = require('./enforce-state');
+const { extractApiSymbols, groundSymbols } = require('./enforce-grounding');
 
 // ═══════════════════════════════════════════════════════════
 // SECRET DETECTION (high-precision, known prefixes only)
@@ -382,7 +383,57 @@ async function main() {
         return;
       }
 
-      // All libs have ground truth — inject snippets as context + record compliance
+      // ── CHECK 2b: SYMBOL GROUNDING (citation-attribution layer) ──
+      // Research happened at the library level — now verify the specific API
+      // symbols the code calls actually appear in the researched docs. A symbol
+      // with no source is UNVERIFIED (likely hallucinated signature).
+      // Conditional firing: only runs when ground truth exists to check against,
+      // so it never second-guesses code for un-researched libs (FP control).
+      const allSnippets = withTruth
+        .map(lib => getGroundTruth(sessionId, lib))
+        .filter(Boolean)
+        .flatMap(gt => gt.snippets || [])
+        .join(' ');
+
+      const symbols = extractApiSymbols(source);
+      const { ungrounded } = groundSymbols(symbols, allSnippets);
+      // Only escalate HIGH-confidence ungrounded symbols (deep SDK-style chains).
+      const highUngrounded = ungrounded.filter(s => s.confidence === 'HIGH');
+
+      let groundingAdvisory = '';   // tier 0-1 message, injected alongside snippets
+      if (allSnippets.length > 0 && highUngrounded.length > 0) {
+        const symList = highUngrounded.slice(0, 5).map(s => s.full + '()').join(', ');
+        const more = highUngrounded.length > 5 ? ' (+' + (highUngrounded.length - 5) + ' more)' : '';
+        const gReason =
+          'UNVERIFIED API symbols — called but NOT found in any researched docs: ' + symList + more + '\n' +
+          'File: ' + filePath + '\n\n' +
+          'You researched the library but these specific methods have no source. They may be hallucinated.\n' +
+          'REQUIRED: WebSearch/context7 the exact symbol(s) to confirm they exist, OR tag each as\n' +
+          '`// UNVERIFIED: <symbol>` and tell the user it is from training memory, not verified docs.';
+
+        // STRICT severity → suppressed at solo, max T2 at team/prod (never permanent block).
+        const gResult = peckEvaluateV2(sessionId, 'grounding', filePath, gReason, {
+          confidence: 'MEDIUM',
+          severity: 'STRICT',
+          level,
+          source,
+          matchIndex: -1,
+          domainActive: true,
+          patternName: 'grounding-' + highUngrounded[0].full,
+        });
+        if (!gResult.suppressed && gResult.message) {
+          logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'grounding-tier' + gResult.tier, details: { ungrounded: highUngrounded.map(s => s.full) } });
+          // Deny/block (tier >= 2) terminates the write here.
+          if (gResult.tier >= 2) { emitPeckResult(gResult); return; }
+          // Advisory (tier 0-1): carry the message into the context injected below.
+          groundingAdvisory = gResult.message;
+        }
+      } else {
+        // All called symbols are grounded → grounding compliance (decays prior violations).
+        peckRecordComplianceV2(sessionId, 'grounding', filePath, 'MEDIUM');
+      }
+
+      // All libs have ground truth — inject snippets (+ any grounding advisory) as context.
       const snippetContext = [];
       for (const lib of withTruth.slice(0, 3)) {
         const gt = getGroundTruth(sessionId, lib);
@@ -390,10 +441,15 @@ async function main() {
           snippetContext.push('[' + lib + '] ' + gt.snippets[0].substring(0, 200));
         }
       }
-      if (snippetContext.length > 0) {
-        const ctxMsg = '[GROUND TRUTH] Relevant docs for your code:\n' + snippetContext.join('\n');
+      if (snippetContext.length > 0 || groundingAdvisory) {
+        const parts = [];
+        if (groundingAdvisory) parts.push(groundingAdvisory);
+        if (snippetContext.length > 0) {
+          parts.push('[GROUND TRUTH] Relevant docs for your code:\n' + snippetContext.join('\n'));
+        }
+        const ctxMsg = parts.join('\n\n');
         process.stderr.write('[WRITE-GUARD] ' + ctxMsg + '\n');
-        // Inject as additional context so Claude sees docs alongside writing
+        // Inject as additional context so Claude sees docs (and any UNVERIFIED flag).
         const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
           additionalContext: ctxMsg }};
         process.stdout.write(JSON.stringify(out));

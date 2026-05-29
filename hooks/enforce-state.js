@@ -35,6 +35,15 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// One-way dependency: grounding is a leaf module (no state import), so requiring
+// it here is safe. Used to exclude language builtins from GTC doc-alignment.
+let GROUNDING_BUILTINS;
+try {
+  ({ BUILTIN_METHODS: GROUNDING_BUILTINS } = require('./enforce-grounding'));
+} catch {
+  GROUNDING_BUILTINS = new Set();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SHARED CONSTANTS — single source of truth for all hooks
 // ═══════════════════════════════════════════════════════════════════════════
@@ -212,6 +221,9 @@ const PECK_CONFIG = {
     'licensing': 3,         // MEDIUM confidence
     'skill-loading': 4,    // MEDIUM confidence, generous — many legitimate skips
     'research-mandatory': 1, // Budget=1 → first violation = T2 deny, immediate
+    'grounding': 3,         // MEDIUM confidence — API symbols not found in researched docs;
+                            //   conditional firing (only when ground truth exists) keeps FP low,
+                            //   STRICT severity caps at T2 (never permanent block), escape = research the symbol
   },
 
   // v3: Level-aware severity → max PECK tier mapping
@@ -1433,18 +1445,27 @@ function computeGTC(sessionId, signals) {
       : 20;
   }
 
-  // 3. Doc alignment (0-20)
+  // 3. Doc alignment (0-20) — symbol grounding against researched docs.
+  // Skip language builtins (.map/.then/.push…) so they don't unfairly penalize
+  // the score, and credit a call when EITHER its full path OR its terminal
+  // method name appears in the captured docs (improves recall, lowers FN).
   let docAlign = 20;
-  if (apiCalls.length > 0) {
+  const gradeableApis = apiCalls.filter(api => {
+    const method = String(api).split('.').pop().toLowerCase();
+    return !GROUNDING_BUILTINS.has(method);
+  });
+  if (gradeableApis.length > 0) {
     let foundInDocs = 0;
     const allSnippets = Object.values(state.groundTruth)
       .flatMap(gt => gt.snippets || [])
       .join(' ')
       .toLowerCase();
-    for (const api of apiCalls) {
-      if (allSnippets.includes(api.toLowerCase())) foundInDocs++;
+    for (const api of gradeableApis) {
+      const lc = String(api).toLowerCase();
+      const method = lc.split('.').pop();
+      if (allSnippets.includes(lc) || (method && allSnippets.includes(method))) foundInDocs++;
     }
-    docAlign = Math.round((foundInDocs / apiCalls.length) * 20);
+    docAlign = Math.round((foundInDocs / gradeableApis.length) * 20);
   }
 
   // 4. Skill compliance (0-15)

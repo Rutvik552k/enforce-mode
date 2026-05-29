@@ -28,8 +28,17 @@ const os = require('os');
 // SCAN LOCATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-const SKILLS_DIR = path.join(os.homedir(), '.claude', 'skills');
-const PLUGINS_DIR = path.join(os.homedir(), '.claude', 'plugins', 'marketplaces');
+// Resolved at call time (not module load) so env overrides set by tests after
+// require still take effect. Env overrides allow hermetic isolation from
+// machine-installed skills.
+function skillsDir() {
+  return process.env.ENFORCE_SKILLS_DIR
+    || path.join(os.homedir(), '.claude', 'skills');
+}
+function pluginsDir() {
+  return process.env.ENFORCE_PLUGINS_DIR
+    || path.join(os.homedir(), '.claude', 'plugins', 'marketplaces');
+}
 
 // Infrastructure plugins excluded from skill discovery (not code review skills)
 const EXCLUDED_PLUGINS = new Set(['enforce-mode', 'caveman', 'learned']);
@@ -114,10 +123,10 @@ function collectSkillEntries() {
 
   // 1. ~/.claude/skills/<name>/SKILL.md → name = dir name
   try {
-    if (fs.existsSync(SKILLS_DIR)) {
-      const dirs = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
+    if (fs.existsSync(skillsDir())) {
+      const dirs = fs.readdirSync(skillsDir(), { withFileTypes: true });
       for (const entry of dirs) {
-        const fullPath = path.join(SKILLS_DIR, entry.name);
+        const fullPath = path.join(skillsDir(), entry.name);
         let isDir = entry.isDirectory();
         if (!isDir && entry.isSymbolicLink()) {
           try { isDir = fs.statSync(fullPath).isDirectory(); } catch { continue; }
@@ -137,23 +146,23 @@ function collectSkillEntries() {
 
   // 2. ~/.claude/plugins/marketplaces/<plugin>/skills/<skill>/SKILL.md → name = plugin:skill
   try {
-    if (fs.existsSync(PLUGINS_DIR)) {
-      const plugins = fs.readdirSync(PLUGINS_DIR, { withFileTypes: true });
+    if (fs.existsSync(pluginsDir())) {
+      const plugins = fs.readdirSync(pluginsDir(), { withFileTypes: true });
       for (const plugin of plugins) {
         if (EXCLUDED_PLUGINS.has(plugin.name)) continue;
-        const pluginPath = path.join(PLUGINS_DIR, plugin.name);
+        const pluginPath = path.join(pluginsDir(), plugin.name);
         let isDir = plugin.isDirectory();
         if (!isDir && plugin.isSymbolicLink()) {
           try { isDir = fs.statSync(pluginPath).isDirectory(); } catch { continue; }
         }
         if (!isDir) continue;
 
-        const skillsDir = path.join(pluginPath, 'skills');
+        const pluginSkillsDir = path.join(pluginPath, 'skills');
         try {
-          if (!fs.existsSync(skillsDir)) continue;
-          const skills = fs.readdirSync(skillsDir, { withFileTypes: true });
+          if (!fs.existsSync(pluginSkillsDir)) continue;
+          const skills = fs.readdirSync(pluginSkillsDir, { withFileTypes: true });
           for (const skill of skills) {
-            const skillFullPath = path.join(skillsDir, skill.name);
+            const skillFullPath = path.join(pluginSkillsDir, skill.name);
             let sIsDir = skill.isDirectory();
             if (!sIsDir && skill.isSymbolicLink()) {
               try { sIsDir = fs.statSync(skillFullPath).isDirectory(); } catch { continue; }

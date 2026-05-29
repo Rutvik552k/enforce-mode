@@ -29,6 +29,35 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// ── HERMETIC SKILL FIXTURE ──────────────────────────────────────────────────
+// Skill discovery scans ~/.claude for installed skills, so results vary by
+// machine (and break when no skills are installed / a marketplace is removed).
+// Point discovery at a controlled fixture dir via ENFORCE_SKILLS_DIR so these
+// assertions are deterministic. Subprocesses inherit this env automatically.
+const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'enforce-skills-'));
+const FIXTURE_PLUGINS = fs.mkdtempSync(path.join(os.tmpdir(), 'enforce-plugins-'));
+process.env.ENFORCE_SKILLS_DIR = FIXTURE_DIR;
+process.env.ENFORCE_PLUGINS_DIR = FIXTURE_PLUGINS;
+
+function writeFixtureSkill(name, description) {
+  const dir = path.join(FIXTURE_DIR, name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'),
+    '---\nname: ' + name + '\ndescription: ' + description + '\n---\n');
+}
+// Cover every trigger the suite exercises (extensions, content, research):
+writeFixtureSkill('multi-lang-review', 'typescript python golang rust code review');
+writeFixtureSkill('security-review', 'security review for owasp vulnerabilities and auth');
+writeFixtureSkill('database-review', 'database review for prisma and sql queries');
+writeFixtureSkill('frontend-review', 'frontend react component review');
+writeFixtureSkill('llm-safety-review', 'llm prompt injection safety review for anthropic openai');
+writeFixtureSkill('deployment-review', 'deployment review for kubernetes helm and docker');
+
+process.on('exit', () => {
+  try { fs.rmSync(FIXTURE_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
+  try { fs.rmSync(FIXTURE_PLUGINS, { recursive: true, force: true }); } catch { /* ignore */ }
+});
+
 const HOOK = path.join(__dirname, '..', 'hooks', 'enforce-skill-loader.js');
 const { clearState, setLevel } = require('../hooks/enforce-state');
 const { discoverSkills, clearRegistryCache } = require('../hooks/enforce-skill-registry');

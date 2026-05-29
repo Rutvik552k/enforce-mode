@@ -209,6 +209,39 @@ Computed from 6 signals — all hook-measured, zero Claude self-assessment:
 
 ---
 
+## Grounded Generation — API-symbol attribution (v3.4)
+
+Knowing Claude researched the *library* `stripe` is not the same as knowing the
+*method* it just wrote — `stripe.subscriptions.fabricatePlan()` — actually exists.
+Library-level checks miss invented method signatures, the most common form of code
+hallucination.
+
+The **Grounded-Generation Layer** closes that gap. After a library is
+research-verified, it extracts every external API call symbol in the code and
+checks each one against the documentation snippets that were actually captured:
+
+- **Grounded** — the symbol appears in a researched doc → trusted, docs injected as context.
+- **UNVERIFIED** — the symbol appears in *no* researched source → flagged. Claude must
+  search the exact symbol to confirm it exists, or tag it `// UNVERIFIED: <symbol>` and
+  tell you it came from training memory, not verified docs.
+
+This is citation-attribution adapted to code — grounding each generated API call in a
+real source, the same principle behind reliable-citation RAG research
+([VeriCite, SIGIR-AP 2025](https://arxiv.org/abs/2510.11394)) and the
+abstain-when-ungrounded finding from semantic-entropy hallucination detection
+([Farquhar et al., *Nature* 2024](https://www.nature.com/articles/s41586-024-07421-0)).
+
+**Low false positives by design** ([ZeroFalse, 2025](https://arxiv.org/abs/2510.02534)):
+it only fires when research exists to check against, never flags language builtins
+(`.map`/`.then`/`.push`) or self-references (`this`/`res`), and only escalates
+high-confidence deep call chains.
+
+**Never deadlocks**: the `grounding` check is suppressed at `solo`, capped at a
+recoverable deny (never a permanent block) at `team`/`prod`, and there is always one
+clear escape — search the flagged symbol. Once captured, it grounds and the check clears.
+
+---
+
 ## Configuration (Optional)
 
 enforce-mode works out of the box with sensible defaults. For customization:
@@ -316,5 +349,5 @@ A: Ground Truth Confidence — a 0-100 score computed from measurable signals (r
 ---
 
 <p align="center">
-  <b>v3.4.0</b> — 41 domains, 299 tests, 68+ auto-discoverable skills, GTC scoring, ground truth enforcement, dual output, zero dependencies
+  <b>v3.4.0</b> — 41 domains, 451 tests, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth enforcement, dual output, zero dependencies
 </p>

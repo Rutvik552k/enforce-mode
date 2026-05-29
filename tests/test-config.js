@@ -7,10 +7,24 @@
 
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 // We need to test getDefaultLevel with different env states
 // Save original env
 const originalEnv = process.env.ENFORCE_DEFAULT_LEVEL;
+const originalConfigDir = process.env.ENFORCE_CONFIG_DIR;
+const originalSettingsPath = process.env.ENFORCE_SETTINGS_PATH;
+
+// HERMETIC ISOLATION: point config + settings at empty temp locations so the
+// machine's real persisted level (config.json / settings.json) cannot leak into
+// these assertions. Without this, a previously-persisted level (e.g. "prod")
+// makes the "returns solo" / "ignores invalid" cases fail on developer machines.
+// Prefix includes "enforce-mode" so getConfigDir/getConfigPath substring
+// assertions still hold under the override.
+const tmpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'enforce-mode-cfg-'));
+process.env.ENFORCE_CONFIG_DIR = tmpConfigDir;
+process.env.ENFORCE_SETTINGS_PATH = path.join(tmpConfigDir, 'no-settings.json');
 
 let passed = 0;
 let failed = 0;
@@ -95,6 +109,11 @@ if (originalEnv !== undefined) {
 } else {
   delete process.env.ENFORCE_DEFAULT_LEVEL;
 }
+if (originalConfigDir !== undefined) process.env.ENFORCE_CONFIG_DIR = originalConfigDir;
+else delete process.env.ENFORCE_CONFIG_DIR;
+if (originalSettingsPath !== undefined) process.env.ENFORCE_SETTINGS_PATH = originalSettingsPath;
+else delete process.env.ENFORCE_SETTINGS_PATH;
+try { fs.rmSync(tmpConfigDir, { recursive: true, force: true }); } catch { /* ignore */ }
 
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

@@ -21,9 +21,16 @@ const os = require('os');
 const VALID_LEVELS = ['off', 'solo', 'team', 'prod'];
 
 const claudeDir = path.join(os.homedir(), '.claude');
-const settingsPath = path.join(claudeDir, 'settings.json');
+// ENFORCE_SETTINGS_PATH override allows hermetic test isolation from the
+// machine's real ~/.claude/settings.json.
+const settingsPath = process.env.ENFORCE_SETTINGS_PATH
+  || path.join(claudeDir, 'settings.json');
 
 function getConfigDir() {
+  // Explicit override (used by tests for hermetic isolation from machine config)
+  if (process.env.ENFORCE_CONFIG_DIR) {
+    return process.env.ENFORCE_CONFIG_DIR;
+  }
   if (process.env.XDG_CONFIG_HOME) {
     return path.join(process.env.XDG_CONFIG_HOME, 'enforce-mode');
   }

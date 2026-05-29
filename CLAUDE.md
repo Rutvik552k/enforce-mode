@@ -6,6 +6,7 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 
 - `hooks/` — Core logic (activate, detect, config, rules, tracker, skill-loader) + installers + statusline scripts
 - `hooks/enforce-skill-loader.js` — PECK-integrated skill loading enforcement (PreToolUse)
+- `hooks/enforce-grounding.js` — API-symbol → source attribution (anti-hallucination core; pure functions)
 - `hooks/enforce-research-capture.js` — PostToolUse search result capture for GTC scoring
 - `hooks/enforce-post-write-check.js` — PostToolUse compliance check after Write/Edit
 - `hooks/enforce-session-log.js` — Stop hook that persists session activity to `.claude/session_logs.md`
@@ -31,10 +32,13 @@ Claude Code plugin: always-on universal engineering rules + project-aware domain
 ## Testing
 
 ```bash
-node tests/test-config.js && node tests/test-detect.js && node tests/test-detect-v2.js && node tests/test-rules.js && node tests/test-compress.js && node tests/test-peck.js && node tests/test-peck-v2.js && node tests/test-deadlocks.js && node tests/test-domain-guard.js && node tests/test-peck-v3.js && node tests/test-skill-loader.js && node tests/test-log.js && node tests/test-gtc.js && node tests/test-session-save-resume.js
+for t in tests/test-*.js; do node "$t" || exit 1; done
 ```
 
-All 270 tests across 13 suites must pass before committing.
+All 451 tests across 18 suites must pass before committing. Tests are hermetic:
+config/skill discovery dirs are overridable via `ENFORCE_CONFIG_DIR`,
+`ENFORCE_SETTINGS_PATH`, `ENFORCE_SKILLS_DIR`, `ENFORCE_PLUGINS_DIR` so they never
+leak machine-installed config or skills.
 
 ## Adding Domains (v3)
 
@@ -75,6 +79,9 @@ Confidence-weighted, level-aware escalation with safety mechanisms:
 - **Ground truth capture**: PostToolUse captures WebSearch/WebFetch results into state.groundTruth
 - **Research-mandatory gate**: budget=1, HIGH confidence, ALWAYS severity — immediate T2 deny for unresearched libraries
 - **GTC scoring**: Ground Truth Confidence score (0-100) computed per response from 6 signals, displayed via stderr
+- **Grounded-Generation Layer** (`enforce-grounding.js`, write-guard CHECK 2b): after a library is research-verified, extract the API call symbols the code uses (deep member chains like `client.chat.completions.create`) and check each against the captured doc snippets. A symbol with no source is **UNVERIFIED** (likely hallucinated signature). Citation-attribution adapted to code (VeriCite, SIGIR-AP 2025; abstention from semantic-entropy work, Nature 2024).
+  - **Conditional firing** (FP control): only runs when ground truth exists to check against — never second-guesses un-researched code (that is the research gate's job). Builtins (`.map`/`.then`/`.push`…) and noise roots (`this`/`res`/`console`) are never flagged. Only HIGH-confidence (deep-chain) ungrounded symbols escalate.
+  - **Deadlock-safe**: `grounding` category is STRICT severity → suppressed at solo, capped at T2 (deny, never permanent block) at team/prod. The escape hatch is always "search the flagged symbol" → captures it into ground truth → next write grounds and clears. Compliance decays the violation count.
 
 ### Level Matrix
 

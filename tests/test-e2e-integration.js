@@ -18,6 +18,23 @@ const path = require('path');
 const os = require('os');
 
 const HOOKS_DIR = path.join(__dirname, '..', 'hooks');
+
+// HERMETIC SKILL FIXTURE — the skill-loader scenario needs at least one skill
+// mapping to .ts; otherwise discovery (machine-dependent) finds none and the
+// dual-output assertion fails. Point discovery at a controlled fixture.
+const E2E_SKILLS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'enforce-e2e-skills-'));
+process.env.ENFORCE_SKILLS_DIR = E2E_SKILLS_DIR;
+process.env.ENFORCE_PLUGINS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'enforce-e2e-plugins-'));
+(function seedSkill() {
+  const dir = path.join(E2E_SKILLS_DIR, 'multi-lang-review');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'),
+    '---\nname: multi-lang-review\ndescription: typescript python golang rust code review\n---\n');
+})();
+process.on('exit', () => {
+  try { fs.rmSync(E2E_SKILLS_DIR, { recursive: true, force: true }); } catch { /* ignore */ }
+});
+
 const {
   clearState, readState, writeState, setLevel, getStatePath,
   recordGroundTruth, getGroundTruth, getResearchedLibs,
