@@ -1,93 +1,171 @@
-# enforce-mode
+# enforce-mode — Claude Code Plugin
 
-Claude Code plugin: always-on universal engineering rules + project-aware domain enforcement.
+**Goal:** Build an enforce-mode plugin that auto-follows the rules in a
+project's `CLAUDE.md` once activated — enforcement is built in, the user never
+re-writes the rules by hand. The plugin also stands up every agent named in the
+`CLAUDE.md` (the department subagents), so the routing map works out of the box.
 
-## Structure
+The ruleset below is what the plugin reads and enforces.
 
-- `hooks/` — Core logic (activate, detect, config, rules, tracker, skill-loader) + installers + statusline scripts
-- `hooks/enforce-skill-loader.js` — PECK-integrated skill loading enforcement (PreToolUse)
-- `hooks/enforce-grounding.js` — API-symbol → source attribution (anti-hallucination core; pure functions)
-- `hooks/enforce-research-capture.js` — PostToolUse search result capture for GTC scoring
-- `hooks/enforce-post-write-check.js` — PostToolUse compliance check after Write/Edit
-- `hooks/enforce-session-log.js` — Stop hook that persists session activity to `.claude/session_logs.md`
-- `hooks/enforce-session-save.js` — Stop hook that auto-saves session summary to `~/.claude/session-data/`
-- `hooks/enforce-session-resume.js` — SessionStart hook that loads previous session context
-- `hooks/domains/` — Modular domain pattern files (v3: 30 domains, 83 patterns)
-- `rules/` — Rule markdown files: `universal.md` + `domains/*.md` (41 domains)
-- `skills/enforce/SKILL.md` — Source of truth for all rule definitions
-- `commands/enforce.toml` — `/enforce` slash command
-- `tests/` — 304 tests across 14 suites
-- `.claude-plugin/` — Plugin manifest for Claude Code marketplace
+---
 
-## Key Patterns
+# CLAUDE.md — JARVIS Project Operating Rules
 
-- Entry point: `hooks/enforce-activate.js` (SessionStart hook)
-- Domain detection: weighted signal scoring in `hooks/enforce-detect.js` (v1+v2+v3 = 41 domains)
-- Domain patterns: modular loading from `hooks/domains/*.js` (v3)
-- Level filtering: severity tags `[WARN]`/`[STRICT]`/`[CRITICAL]` mapped to solo/team/prod
-- Level-aware enforcement: guards respect severity × level (v3)
-- Context budget: 8KB max, ~2KB universal + ~1KB per domain (max 4 domains)
-- Zero npm dependencies — pure Node.js stdlib
+These rules OVERRIDE default behavior. Follow them exactly.
 
-## Testing
+---
 
-```bash
-for t in tests/test-*.js; do node "$t" || exit 1; done
-```
+## Rule 1 — Ground Research Before Anything
 
-All 451 tests across 18 suites must pass before committing. Tests are hermetic:
-config/skill discovery dirs are overridable via `ENFORCE_CONFIG_DIR`,
-`ENFORCE_SETTINGS_PATH`, `ENFORCE_SKILLS_DIR`, `ENFORCE_PLUGINS_DIR` so they never
-leak machine-installed config or skills.
+Every decision, recommendation, and implementation MUST be grounded in verified
+research before it is acted on. No guessing, no "it should work," no assuming an
+API/library/pattern behaves a certain way.
 
-## Adding Domains (v3)
+- Web-search to verify APIs, library versions, model behavior, and patterns
+  **before** writing code that depends on them.
+- Read the source / official docs / repo when integrating anything external.
+- Cite the ground truth (doc link, repo file, command output, test result) that
+  backs the decision.
+- If research cannot confirm a claim, say so explicitly and stop — do not
+  proceed on an unverified assumption.
+- Verify before recommend: never swap an agreed-upon decision without research +
+  asking the user first.
 
-1. Create `hooks/domains/<domain>.js` exporting `{ domain, patterns, extMap }`
-   - Each pattern: `{ name, regex, risk, confidence, severity, multiline, justification }`
-   - confidence: HIGH|MEDIUM|LOW (detection accuracy)
-   - severity: WARN|STRICT|CRITICAL (enforcement level)
-   - Must have >= 2 HIGH confidence patterns per domain
-2. Add detection signals to `DOMAIN_RULES_V3` in `hooks/enforce-detect.js`
-3. Create `rules/domains/<domain>.md` with `[WARN]`/`[STRICT]`/`[CRITICAL]` tagged rules
-4. Add coverage matrix tests in `tests/`
+This applies to the main agent **and** every subagent. A department subagent's
+point of view is only valid when backed by ground truth, not opinion.
 
-## PECK v3 Algorithm
+---
 
-Confidence-weighted, level-aware escalation with safety mechanisms:
+## Rule 2 — Subagents Work As A Team By Department
 
-### Core (v2, unchanged)
-- Patterns declare confidence: HIGH (1.0), MEDIUM (0.5), LOW (0.25)
-- Context detection suppresses matches in comments/tests/types (multiplier 0.0)
-- Domain relevance prevents cross-domain false triggers
-- effectiveWeight = confidence × context × domainRelevance
-- Below 0.5 threshold → advisory only, never escalates
-- Above 0.75 → accelerated escalation (skips tier 0)
+All subagents operate as one team. Each gives its point of view, **backed by
+ground truth**, for the department it owns.
 
-### v3 Additions
-- **Severity × Level filtering**: WARN enforces at solo+, STRICT at team+, CRITICAL at prod (with team advisory)
-- **Level-aware tier cap**: solo max T0, team max T2 (STRICT)/T1 (CRITICAL), prod max T3
-- **Global safety valve**: 5+ domain circuits open → enforcement paused
-- **Time-based decay**: 5min stale violations decay by 0.5 per tick
-- **Per-pattern-per-file dedup**: one violation per pattern name per file
-- **Cross-domain overlap prevention**: same pattern name skipped if already found
-- **Inline suppression**: `// enforce-ignore` comments suppress nearby patterns
-- **Dynamic budgets**: auto-calculated from patternCount × (1 - avgConfidence) × 2
-- **Modular loading**: patterns from `hooks/domains/*.js`, fallback to built-in
-- **Context domain cap**: max 4 domains in system prompt (budget guarantee)
-- **Skill loading enforcement**: PECK-integrated PreToolUse hook (ALWAYS severity, full T0→T3 at all levels, no level cap)
-- **Dual output**: All T0/T1 messages output to both stderr (user terminal) and additionalContext (Claude)
-- **Ground truth capture**: PostToolUse captures WebSearch/WebFetch results into state.groundTruth
-- **Research-mandatory gate**: budget=1, HIGH confidence, ALWAYS severity — immediate T2 deny for unresearched libraries
-- **GTC scoring**: Ground Truth Confidence score (0-100) computed per response from 6 signals, displayed via stderr
-- **Grounded-Generation Layer** (`enforce-grounding.js`, write-guard CHECK 2b): after a library is research-verified, extract the API call symbols the code uses (deep member chains like `client.chat.completions.create`) and check each against the captured doc snippets. A symbol with no source is **UNVERIFIED** (likely hallucinated signature). Citation-attribution adapted to code (VeriCite, SIGIR-AP 2025; abstention from semantic-entropy work, Nature 2024).
-  - **Conditional firing** (FP control): only runs when ground truth exists to check against — never second-guesses un-researched code (that is the research gate's job). Builtins (`.map`/`.then`/`.push`…) and noise roots (`this`/`res`/`console`) are never flagged. Only HIGH-confidence (deep-chain) ungrounded symbols escalate.
-  - **Deadlock-safe**: `grounding` category is STRICT severity → suppressed at solo, capped at T2 (deny, never permanent block) at team/prod. The escape hatch is always "search the flagged symbol" → captures it into ground truth → next write grounds and clears. Compliance decays the violation count.
+### How it works
 
-### Level Matrix
+1. **Main agent triages.** For every user query, the main agent first decides
+   which department(s) the work belongs to.
+2. **Main agent assigns.** It routes the work to the matching department
+   subagent(s) to execute — it does not do specialist work itself when a
+   department owns it.
+3. **Subagent executes + reports POV.** The subagent does the work and returns
+   its findings/decision with the ground-truth evidence behind it.
+4. **Cross-department work** (a query spanning many departments) goes to
+   `team-orchestrator` first to produce the ordered chain of specialists and the
+   gates between them; the main agent then runs each specialist in turn and feeds
+   results forward. (Subagents cannot spawn subagents — main agent drives the chain.)
+5. **Main agent synthesizes** the department POVs into the final answer for the user.
 
-```
-           SOLO          TEAM          PROD
-[WARN]     T0 max        T0 max        T0-T1
-[STRICT]   suppressed    T0-T2         T0-T2
-[CRITICAL] suppressed    T0-T1         T0-T3 (hard block)
-```
+### Department → Subagent routing map
+
+| Department / concern | Subagent |
+|---|---|
+| Orchestration of multi-department work | `team-orchestrator` |
+| Architecture, service boundaries, ADRs, build-vs-buy | `solution-architect` |
+| Hard algorithm/data-structure design, perf/scale-critical components, research-to-production, "is there a smarter way" — formalize→survey prior art→design→benchmark | `research-solution-architect` |
+| Server-side services, APIs, business logic, queues | `backend-engineer` |
+| Web UI (React/TS), accessibility, state, perf | `frontend-engineer` |
+| End-to-end vertical slices (API→UI), MVPs, prototypes | `fullstack-engineer` |
+| Shared UI components, design tokens, primitives | `design-system-engineer` |
+| User flows, IA, prototypes, unhappy-path UX | `ux-flow-designer` |
+| Cloud architecture, k8s, multi-region, cost | `cloud-engineer` |
+| CI/CD, IaC, container build/deploy, env parity | `devops-engineer` |
+| Reliability, SLOs, observability, incident response | `site-reliability-engineer` |
+| Adversarial security review (read-only) | `security-auditor` |
+| Security hardening, threat modeling, fixes | `security-engineer` |
+| Regulatory/compliance gap review (read-only) | `compliance-officer` |
+| Functional/exploratory/release QA testing | `qa-engineer` |
+| Automated test suites (unit/integration/e2e/load) | `testing-engineer` |
+| Computer-vision systems and pipelines | `computer-vision-engineer` |
+| Productionizing models, training pipelines, eval gates, serving | `ml-engineer` |
+| Data pipelines, ETL, schema/quality validation, leakage checks | `data-engineer` |
+| Experiment design, metrics, statistical analysis, A/B readouts | `data-scientist` |
+| Sourced research, prior-art, feasibility, dossiers | `research-agent` |
+| Understanding legacy/undocumented code, reverse-eng | `reverse-engineering-agent` |
+| Delivery planning, milestones, dependencies, risk | `project-manager` |
+| Release gates, changelog, versioning, go/no-go | `release-manager` |
+
+When a query does not clearly map to a department, the main agent picks the
+closest-fit department and states why, or asks the user to disambiguate.
+
+---
+
+## Rule 3 — Subagents Always Run In Background
+
+Always dispatch subagents with background execution (`run_in_background`) so the
+main agent is NEVER blocked waiting on one. Launch the subagent, then keep doing
+productive work (other tasks, status reporting, monitoring) — act on each
+subagent's result when its completion notification fires. Never sit idle waiting
+for a subagent to finish.
+
+## Rule 4 — Software Development Lifecycle (SDLC) Runs Every Conversation
+
+Every piece of work — feature, fix, refactor, or change — MUST move through the
+software development lifecycle below. The lifecycle is **always on**: the
+relevant lifecycle-engineer departments are engaged for every conversation, not
+just large ones. Small work runs a lightweight pass through the same phases; it
+never skips them.
+
+### The lifecycle (the loop)
+
+Work flows through these phases in order, and **loops** — the cycle repeats until
+the work meets its acceptance criteria. A failed gate sends the work back to an
+earlier phase, not forward.
+
+1. **Requirements & triage** — clarify what is being asked and the acceptance
+   criteria. Main agent decides which department(s) own the work (Rule 2).
+2. **Research & ground truth** — the owning engineer gathers verified ground
+   truth (docs, source, repo, command/test output) BEFORE any design or code.
+   This is mandatory per Rule 1: no design or implementation begins until the
+   engineer can cite the ground source backing it.
+3. **Design & architecture** — `solution-architect` (and
+   `research-solution-architect` for hard/perf-critical problems) produces the
+   design/ADR, every claim backed by the ground truth from phase 2.
+4. **Architecture critique (gate)** — `testing-engineer` (with `qa-engineer` for
+   functional risk, `security-auditor` for adversarial risk) **critiques the
+   architecture using facts** — not opinion. The critique must cite evidence
+   (spec, benchmark, prior incident, failing case, source) for every objection.
+   The design does not proceed to implementation until this critique is answered.
+5. **Implementation** — the owning engineer department builds the solution.
+   **Every implementing engineer MUST have a ground source before writing code**
+   (Rule 1): the API/library/pattern behavior must be verified, cited, and
+   recorded. No implementation on assumption.
+6. **Test & verify** — `testing-engineer` writes/extends automated suites
+   (unit/integration/e2e/load); `qa-engineer` runs functional/exploratory/edge
+   testing against the acceptance criteria. Tests must run and show output —
+   "it should work" is not acceptance.
+7. **Review & gates** — code review, `security-engineer`/`security-auditor`
+   sign-off, `release-manager` go/no-go where a release is involved.
+8. **Release & observe** — ship through the release gates, confirm monitoring,
+   keep a rehearsed rollback. Findings feed back into phase 1 → the loop closes.
+
+### Two hard requirements inside the loop
+
+- **Testing engineers critique the architecture with facts.** The
+  `testing-engineer` (and the QA/security review departments) act as an
+  adversarial, evidence-backed check on the design at phase 4 AND on the built
+  solution at phase 6. Every critique cites ground truth — a spec, a benchmark, a
+  failing test, a prior incident, or source. No "I think" objections; no praise
+  padding.
+- **Building engineers must hold ground source before implementing.** Any
+  engineer department that develops a solution (backend, frontend, fullstack,
+  ml, data, cloud, devops, design-system, etc.) MUST have verified the relevant
+  ground source — official docs, source code, repo, or confirmed test output —
+  BEFORE implementation begins, and MUST cite it. This is Rule 1 applied at the
+  implementation phase: research-then-build, never build-then-hope.
+
+The loop is the default operating mode for the project. Engage it every
+conversation; size the rigor to the task, but never drop a phase.
+
+
+---
+
+## Reminder
+
+- Research before code. Verify before recommend. Test before ship.
+- Never commit or push without asking.
+- Ground truth over opinion — for every department, every time.
+
+
+## goal
+- Desined web search mcp server that can scrap any website with and without any blockers. It must have high accuracy and cover 90%+ resources.

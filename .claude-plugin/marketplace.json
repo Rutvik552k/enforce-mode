@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "enforce-mode",
-      "description": "Universal rules + domain-aware enforcement for ML, GPU, video, API security, and cost tracking projects.",
+      "description": "Universal rules + domain-aware enforcement for ML, GPU, video, API security, and cost tracking projects. Ships 19 ground-truth-backed department subagents that realize the CLAUDE.md routing map.",
       "source": "./",
       "category": "workflow"
     }

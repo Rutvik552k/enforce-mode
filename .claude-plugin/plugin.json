@@ -1,7 +1,7 @@
 {
   "name": "enforce-mode",
-  "description": "Always-on universal engineering rules + project-aware domain rules with PECK v3 level-aware enforcement and a Grounded-Generation Layer that traces every external API call back to a researched source (UNVERIFIED flag when it can't), reducing hallucination. Detects 41 domains across 12 lifecycle phases via weighted signal scoring. Modular pattern architecture with per-pattern severity (WARN/STRICT/CRITICAL) mapped to enforcement levels (solo/team/prod).",
-  "version": "3.4.0",
+  "description": "Always-on universal engineering rules + project-aware domain rules with PECK v3 level-aware enforcement and a Grounded-Generation Layer that traces every external API call back to a researched source (UNVERIFIED flag when it can't), reducing hallucination. Detects 41 domains across 12 lifecycle phases via weighted signal scoring. Modular pattern architecture with per-pattern severity (WARN/STRICT/CRITICAL) mapped to enforcement levels (solo/team/prod). Ships 19 department subagents (ground-truth-backed, research-before-code) that realize the CLAUDE.md routing map out of the box.",
+  "version": "3.5.0",
   "author": {
     "name": "Rutvik552k",
     "url": "https://github.com/Rutvik552k"
@@ -14,6 +14,7 @@
       "default": "solo"
     }
   },
+  "agents": ["./agents/"],
   "hooks": {
     "SessionStart": [
       {
@@ -23,24 +24,6 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-activate.js",
             "timeout": 10,
             "statusMessage": "Loading enforce-mode..."
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-session-resume.js",
-            "timeout": 5,
-            "statusMessage": "Loading previous session..."
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-mode-tracker.js",
-            "timeout": 5,
-            "statusMessage": "Tracking enforce-mode..."
           }
         ]
       }
@@ -54,76 +37,6 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-write-guard.js",
             "timeout": 10,
             "statusMessage": "Enforcing write rules..."
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-dsa-guard.js",
-            "timeout": 10,
-            "statusMessage": "Checking algorithm complexity..."
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-domain-guard.js",
-            "timeout": 10,
-            "statusMessage": "Checking domain-specific rules..."
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-skill-loader.js",
-            "timeout": 5,
-            "statusMessage": "Loading relevant skills..."
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-skill-auto-loader.js",
-            "timeout": 5,
-            "statusMessage": "Auto-injecting skill context..."
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-bash-guard.js",
-            "timeout": 10,
-            "statusMessage": "Enforcing bash rules..."
-          }
-        ]
-      },
-      {
-        "matcher": "WebSearch|WebFetch|Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-skill-loader.js",
-            "timeout": 5,
-            "statusMessage": "Loading relevant skills..."
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-post-write-check.js",
-            "timeout": 5,
-            "statusMessage": "Post-write compliance check..."
-          }
-        ]
-      },
-      {
-        "matcher": "WebSearch|WebFetch|mcp__plugin_ecc_context7__query-docs|mcp__plugin_ecc_context7__resolve-library-id|mcp__plugin_ecc_exa__web_search_exa|mcp__plugin_ecc_exa__web_fetch_exa",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-research-capture.js",
-            "timeout": 5,
-            "statusMessage": "Capturing research results..."
           }
         ]
       }
@@ -131,18 +44,6 @@
     "Stop": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-session-log.js",
-            "timeout": 5,
-            "statusMessage": "Logging session activity..."
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-session-save.js",
-            "timeout": 10,
-            "statusMessage": "Saving session data..."
-          },
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-stop-guard.js",

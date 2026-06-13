@@ -129,13 +129,25 @@ Violations are handled progressively — not immediately blocked:
 
 This means you won't get stuck in a loop. If Claude truly can't comply, enforcement stops gracefully.
 
-### Dual Output (v3.4)
+### Active Hooks (minimal pipeline)
 
-All enforcement messages appear in **two places**:
+This build runs a **lean 3-hook pipeline** — the core enforcement loop, nothing else:
+
+| Event | Hook | Role |
+|-------|------|------|
+| `SessionStart` | `enforce-activate.js` | Injects universal + detected-domain rules; project & skill detection |
+| `PreToolUse` (Write/Edit/NotebookEdit) | `enforce-write-guard.js` | PECK write-time checks: security anti-patterns, research/grounding gate |
+| `Stop` | `enforce-stop-guard.js` | Pre-completion checks + GTC score |
+
+The remaining hook scripts ship in `hooks/` but are **not registered** in this
+build. The features they powered (listed below as *extended hooks*) are dormant
+unless you wire them back into `.claude-plugin/plugin.json`.
+
+### Dual Output
+
+Enforcement messages from the active hooks appear in **two places**:
 - **Your terminal** (via stderr) — you always see what's happening
 - **Claude's context** (via additionalContext) — Claude acts on the guidance
-
-No more silent advisory messages that Claude ignores.
 
 ---
 
@@ -153,7 +165,12 @@ enforce-mode automatically detects what type of project you're working on and ac
 
 ---
 
-## Auto-Skill Loading (v3.4)
+## Auto-Skill Loading (extended hook — dormant in minimal build)
+
+> Powered by `enforce-skill-loader.js` / `enforce-skill-auto-loader.js`, which are
+> **not registered** in the minimal pipeline. Re-add their `PreToolUse` entries to
+> `plugin.json` to enable. `enforce-activate.js` still *detects and lists* relevant
+> skills at session start; it just no longer auto-injects them per tool call.
 
 enforce-mode automatically loads relevant skills based on what code you're writing:
 
@@ -169,16 +186,16 @@ No manual `/ecc:skill-name` invocation needed — rules inject directly into con
 
 ---
 
-## Ground Truth Enforcement (v3.4)
+## Ground Truth Enforcement
 
-enforce-mode now tracks **what Claude actually researched** vs **what libraries Claude uses in code**.
+enforce-mode tracks **what Claude actually researched** vs **what libraries Claude uses in code**.
 
 ### How It Works
 
-1. **Capture**: When Claude searches (WebSearch, context7, Exa), a PostToolUse hook captures the results — query text, snippets, URLs — into session state per library.
-2. **Gate**: When Claude writes code with external imports, a PreToolUse hook checks if each library has captured ground truth. **No ground truth → immediate deny** (budget=1, first violation blocks).
+1. **Capture** *(extended hook — dormant in minimal build)*: When Claude searches (WebSearch, context7, Exa), a PostToolUse hook (`enforce-research-capture.js`) captures the results — query text, snippets, URLs — into session state per library. Re-register it to feed the gate and grounding checks.
+2. **Gate**: When Claude writes code with external imports, the `PreToolUse` write-guard checks if each library has captured ground truth. **No ground truth → immediate deny** (budget=1, first violation blocks). In the minimal build, with capture dormant, this gate sees no ground truth — the grounding check stays inert by design rather than blocking.
 3. **Inject**: When ground truth exists, relevant doc snippets are injected as context — Claude sees the docs right when writing.
-4. **Score**: A GTC (Ground Truth Confidence) score is computed every response and displayed in your terminal.
+4. **Score**: A GTC (Ground Truth Confidence) score is computed every response by the `Stop` hook and displayed in your terminal.
 
 ### GTC Score
 
@@ -242,6 +259,50 @@ clear escape — search the flagged symbol. Once captured, it grounds and the ch
 
 ---
 
+## Department Agents (v3.5)
+
+enforce-mode ships **19 department subagents** that realize the `CLAUDE.md` Rule 2
+routing map out of the box. Install the plugin and the whole team is available as
+`enforce-mode:<agent>` — no per-project authoring required.
+
+Every agent is built with the same enforce-mode contract baked into its system
+prompt:
+
+- **Ground before acting** — verify APIs/versions/behavior against primary sources
+  before recommending or coding. No "it should work."
+- **POV backed by ground truth** — every claim cites evidence (doc link, paper +
+  table/page, source file, command output). Opinion without evidence is invalid.
+- **Report failures as-is** — a failed run/test/result is reported with its output,
+  never reframed as success.
+- **Stay in your department** — defer cross-department work to the main agent;
+  cross-cutting work goes through `team-orchestrator` first.
+
+| Department | Agent |
+|---|---|
+| Architecture / contracts | `solution-architect` |
+| Algorithms / performance (complexity targets) | `research-solution-architect` |
+| Vision / steganalysis modeling | `computer-vision-engineer` |
+| ML training & serving | `ml-engineer` |
+| Data pipelines / datasets / leakage | `data-engineer` |
+| Statistics / experiments / figures | `data-scientist` |
+| Research / citations / SOTA | `research-agent` |
+| CI/CD / IaC / GPU ops | `devops-engineer` |
+| Cloud / cost / scaling | `cloud-engineer` |
+| Reliability / incident response | `site-reliability-engineer` |
+| Security audit (read-only) | `security-auditor` |
+| Security hardening / fixes | `security-engineer` |
+| QA / integrity review | `qa-engineer` |
+| Automated tests (SDET) | `testing-engineer` |
+| Legacy / reverse engineering | `reverse-engineering-agent` |
+| Planning / risk | `project-manager` |
+| Release / go-no-go | `release-manager` |
+| Compliance (read-only) | `compliance-officer` |
+| Cross-department orchestration | `team-orchestrator` |
+
+Agent files live in [`agents/`](agents/) and are validated by `tests/test-agents.js`.
+
+---
+
 ## Configuration (Optional)
 
 enforce-mode works out of the box with sensible defaults. For customization:
@@ -288,9 +349,8 @@ Warns → Blocks → Hard-stops on repeated violations
 - Per-session isolation (one session's state doesn't affect others)
 - 8KB max context budget (doesn't bloat your conversations)
 - Dual output: stderr (user terminal) + additionalContext (Claude context)
-- Ground truth captured via PostToolUse hooks on search tools
-- GTC score computed per response, displayed via stderr (zero context cost)
-- Dynamic skill discovery from `~/.claude/skills/` (68+ skills, 5-min cache)
+- GTC score computed per response by the `Stop` hook, displayed via stderr (zero context cost)
+- Minimal pipeline: 3 registered hooks (activate · write-guard · stop-guard); extended hooks ship in `hooks/` but are unregistered (see *Active Hooks*)
 
 ---
 
