@@ -64,8 +64,12 @@ chmod +x "$HOOKS_DIR/enforce-stop-guard.js" 2>/dev/null || true
 
 # Copy rules directory
 mkdir -p "$CLAUDE_DIR/rules/domains"
-cp "$SCRIPT_DIR/../rules/universal.md" "$CLAUDE_DIR/rules/"
+cp "$SCRIPT_DIR/../rules/CLAUDE.md" "$CLAUDE_DIR/rules/"
 cp "$SCRIPT_DIR/../rules/domains/"*.md "$CLAUDE_DIR/rules/domains/"
+
+# Record exactly which domain rule files we copied — lets uninstall remove the
+# full set cleanly without touching the user's own domain rules.
+( cd "$SCRIPT_DIR/../rules/domains" && ls *.md ) > "$CLAUDE_DIR/.enforce-rules-manifest" 2>/dev/null || true
 
 # Copy skills directory
 mkdir -p "$CLAUDE_DIR/skills/enforce"

@@ -108,26 +108,28 @@ Or just say in chat:
 
 | Situation | What enforce-mode does |
 |-----------|----------------------|
-| Claude tries to commit an AWS key | Blocks immediately — secrets never committed |
-| Claude writes code without checking docs | Warns: "research this library first" |
-| Claude says "it should work" without testing | Escalates: "run the tests and show output" |
+| Claude tries to commit an AWS key | Flags the secret — "move to env vars / a secret manager" |
+| Claude writes code without checking docs | Advises: "research this library first" |
+| Claude says "it should work" without testing | Reminds: "run the tests and show output" |
 | Claude uses `eval()` or SQL string concatenation | Flags security anti-pattern |
-| Claude runs a training script in foreground | Blocks: "use background mode for long tasks" |
-| Claude writes code using `prisma` without searching docs | Immediate deny — must search first |
+| Claude runs a training script in foreground | Advises: "use background mode for long tasks" |
+| Claude writes code using `prisma` without searching docs | Advises: search the docs to verify the API first |
 | Claude finishes response with low research coverage | GTC score shown in terminal: `GTC: 35/100 [FAIL]` |
 
 ### How Enforcement Works
 
-Violations are handled progressively — not immediately blocked:
+enforce-mode is **advisory** — it never blocks, denies, or hard-stops an action. Every
+check approves the tool call and injects guidance:
 
 ```
-1st time → Gentle reminder (code still runs)
-2nd time → Stronger warning
-3rd time → Blocks the action
-4th time → Hard stop (prevents retry loops)
+Every check → guidance injected (the action always runs)
+  • Terminal:  a [WRITE-GUARD] / [BASH-GUARD] line you see
+  • Claude:    additionalContext so it acts on the advice
+  • Stop hook: a pre-completion summary + GTC score
 ```
 
-This means you won't get stuck in a loop. If Claude truly can't comply, enforcement stops gracefully.
+Nothing is ever denied or hard-stopped — the model stays in control and decides how to
+act on each advisory. No retry loops, no deadlocks by construction.
 
 ### Active Hooks (minimal pipeline)
 
@@ -136,7 +138,7 @@ This build runs a **lean 3-hook pipeline** — the core enforcement loop, nothin
 | Event | Hook | Role |
 |-------|------|------|
 | `SessionStart` | `enforce-activate.js` | Injects universal + detected-domain rules; project & skill detection |
-| `PreToolUse` (Write/Edit/NotebookEdit) | `enforce-write-guard.js` | PECK write-time checks: security anti-patterns, research/grounding gate |
+| `PreToolUse` (Write/Edit/NotebookEdit) | `enforce-write-guard.js` | Advisory write-time checks: secrets, research/grounding, security anti-patterns (never blocks) |
 | `Stop` | `enforce-stop-guard.js` | Pre-completion checks + GTC score |
 
 The remaining hook scripts ship in `hooks/` but are **not registered** in this
@@ -193,7 +195,7 @@ enforce-mode tracks **what Claude actually researched** vs **what libraries Clau
 ### How It Works
 
 1. **Capture** *(extended hook — dormant in minimal build)*: When Claude searches (WebSearch, context7, Exa), a PostToolUse hook (`enforce-research-capture.js`) captures the results — query text, snippets, URLs — into session state per library. Re-register it to feed the gate and grounding checks.
-2. **Gate**: When Claude writes code with external imports, the `PreToolUse` write-guard checks if each library has captured ground truth. **No ground truth → immediate deny** (budget=1, first violation blocks). In the minimal build, with capture dormant, this gate sees no ground truth — the grounding check stays inert by design rather than blocking.
+2. **Check**: When Claude writes code with external imports, the `PreToolUse` write-guard checks if each library has captured ground truth. **No ground truth → advisory** — guidance is injected to research the API first, and the write still proceeds (never denied). In the minimal build, with capture dormant, this check stays quiet by design.
 3. **Inject**: When ground truth exists, relevant doc snippets are injected as context — Claude sees the docs right when writing.
 4. **Score**: A GTC (Ground Truth Confidence) score is computed every response by the `Stop` hook and displayed in your terminal.
 
@@ -222,7 +224,7 @@ Computed from 6 signals — all hook-measured, zero Claude self-assessment:
 - **90-100 HIGH**: Full compliance
 - **70-89 GOOD**: Minor gaps
 - **50-69 LOW**: Review recommended
-- **0-49 FAIL**: Stop hook blocks completion until gaps addressed
+- **0-49 FAIL**: Stop hook flags the gaps (advisory) for Claude to address before completing
 
 ---
 
@@ -253,9 +255,9 @@ it only fires when research exists to check against, never flags language builti
 (`.map`/`.then`/`.push`) or self-references (`this`/`res`), and only escalates
 high-confidence deep call chains.
 
-**Never deadlocks**: the `grounding` check is suppressed at `solo`, capped at a
-recoverable deny (never a permanent block) at `team`/`prod`, and there is always one
-clear escape — search the flagged symbol. Once captured, it grounds and the check clears.
+**Advisory by design**: the `grounding` check is suppressed at `solo`, and surfaces as
+guidance (never a deny or block) at `team`/`prod`. There is always one clear next step —
+search the flagged symbol; once captured, it grounds and the advisory clears.
 
 ---
 
@@ -391,7 +393,7 @@ A: Yes. Say "stop enforce" or type `/enforce off`.
 A: Yes. Fully supported on macOS, Linux, and Windows.
 
 **Q: What if Claude gets stuck because of a rule?**
-A: The PECK system prevents infinite loops. After 3 retries, enforcement stops gracefully for that violation.
+A: It can't. enforce-mode is advisory — every check approves the action and only injects guidance. Nothing is ever blocked or denied, so there are no retries or deadlocks.
 
 **Q: Does it use the internet?**
 A: No. Everything runs locally. Zero API calls, zero network requests.
@@ -422,5 +424,5 @@ A: Ground Truth Confidence — a 0-100 score computed from measurable signals (r
 ---
 
 <p align="center">
-  <b>v3.6.0</b> — 28 tech-stack-aware department agents, 41 domains, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth enforcement, dual output, zero dependencies
+  <b>v3.7.0</b> — advisory-only model (never blocks/denies), 28 tech-stack-aware department agents, 41 domains, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth guidance, dual output, zero dependencies
 </p>

@@ -60,12 +60,12 @@ test('python -c "x = eval(1+1)" → pass',
 test('node -e "contains inference word" → pass',
   BG, { tool_name: 'Bash', tool_input: { command: 'node -e "the word inference is here"' }, transcript_path: '', session_id: 'dl3' },
   0, false);
-test('python train.py foreground → still blocked',
+test('python train.py foreground → advisory (not blocked)',
   BG, { tool_name: 'Bash', tool_input: { command: 'python train.py' }, transcript_path: '', session_id: 'dl4' },
-  2, false);
-test('torchrun → still blocked',
+  0, false);
+test('torchrun → advisory (not blocked)',
   BG, { tool_name: 'Bash', tool_input: { command: 'torchrun --nproc 4 train.py' }, transcript_path: '', session_id: 'dl5' },
-  2, false);
+  0, false);
 
 // ── FIX #2: Git commit with no transcript → soft warn ──
 console.log('\n── Fix #2: Git commit empty transcript ──');
@@ -81,21 +81,21 @@ test('git add .env-display.tsx → pass',
 test('git add .environment/config.js → pass',
   BG, { tool_name: 'Bash', tool_input: { command: 'git add .environment/config.js' }, transcript_path: '', session_id: 'dl8' },
   0, false);
-test('git add .env → still blocked',
+test('git add .env → advisory (not blocked)',
   BG, { tool_name: 'Bash', tool_input: { command: 'git add .env' }, transcript_path: '', session_id: 'dl9' },
-  2, false);
-test('git add . → still blocked',
+  0, false);
+test('git add . → advisory (not blocked)',
   BG, { tool_name: 'Bash', tool_input: { command: 'git add .' }, transcript_path: '', session_id: 'dl10' },
-  2, false);
+  0, false);
 
 // ── FIX #4: UUID no longer matches Heroku regex ──
 console.log('\n── Fix #4: UUID not flagged as Heroku key ──');
 test('code with UUID → pass (not secret)',
   WG, { tool_name: 'Write', tool_input: { file_path: 'config.js', content: 'const id = "550e8400-e29b-41d4-a716-446655440000";' }, transcript_path: '', session_id: 'dl11' },
   0, false);
-test('HEROKU_API_KEY with UUID → still blocked',
+test('HEROKU_API_KEY with UUID → advisory (detected, not blocked)',
   WG, { tool_name: 'Write', tool_input: { file_path: 'config.js', content: 'HEROKU_API_KEY = "550e8400-e29b-41d4-a716-446655440000"' }, transcript_path: '', session_id: 'dl12' },
-  2, false);
+  0, false);
 
 // ── FIX #5: Empty transcript → soft warn (not deny) ──
 console.log('\n── Fix #5: Empty transcript fallback ──');

@@ -66,6 +66,16 @@ const UNIVERSAL_RULES = [
     minLevel: 'solo'
   },
   {
+    id: 'department-routing',
+    text: 'DEPARTMENT ROUTING: Triage every task to the owning department subagent (architecture, backend, frontend, data, ML, security, DB, mobile, etc.) instead of doing specialist work in the main agent. Each specialist returns its POV backed by ground truth. Cross-department work goes to team-orchestrator first for the ordered chain + gates, then run each specialist in turn.',
+    minLevel: 'solo'
+  },
+  {
+    id: 'sdlc-loop',
+    text: 'SDLC LOOP: Every change moves through requirements -> research/ground-truth -> design -> architecture-critique gate (facts, not opinion) -> implementation (hold ground source before code) -> test & verify (run, show output) -> review/gates -> release. Size rigor to the task; never skip a phase.',
+    minLevel: 'solo'
+  },
+  {
     id: 'session-documentation',
     text: 'SESSION DOCUMENTATION: Update session log — decisions, models verified, issues found/fixed, test results, cost estimates.',
     minLevel: 'team'

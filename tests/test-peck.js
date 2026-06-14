@@ -280,12 +280,12 @@ hookTest('bash-guard: first git commit no tests → approve (tier 0)',
 
 clearState(SID_BG);
 
-// ── Secrets still hard-block regardless of PECK ──
-console.log('\n── Secrets bypass PECK (always exit 2) ──');
+// ── Secrets are flagged but advisory (never block) ──
+console.log('\n── Secrets → advisory (detected, not blocked) ──');
 
-hookTest('secrets still hard-block (no PECK)',
+hookTest('secrets detected → advisory (no deny, no block)',
   WG, { tool_name: 'Write', tool_input: { file_path: 'config.js', content: 'const key = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";' }, transcript_path: '', session_id: 'peck-secret' },
-  2, false);
+  0, false);
 
 // ── Exempt paths bypass PECK ──
 console.log('\n── Exempt paths bypass PECK ──');

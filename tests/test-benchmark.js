@@ -316,12 +316,13 @@ test('WITHOUT: no installer needed', () => {
 
 section('PluginEval — Ecosystem Coherence');
 
-test('WITH: uses standard hook protocol (stdin JSON, exit codes)', () => {
-  // Verify hooks follow Claude Code conventions
+test('WITH: uses standard hook protocol (stdin JSON, advisory context)', () => {
+  // Verify hooks follow Claude Code conventions (advisory mode — no hard block)
   const writeGuard = fs.readFileSync(
     path.join(__dirname, '..', 'hooks', 'enforce-write-guard.js'), 'utf8');
   assert.ok(writeGuard.includes('process.stdin'), 'reads stdin');
-  assert.ok(writeGuard.includes('process.exit(2)'), 'uses exit 2 for block');
+  assert.ok(writeGuard.includes('additionalContext'), 'injects advisory context');
+  assert.ok(!writeGuard.includes('process.exit(2)'), 'advisory mode — never hard-blocks');
   assert.ok(writeGuard.includes('hookSpecificOutput'), 'uses hookSpecificOutput');
   results['plugineval_ecosystem_WITH'] = 9;
 });
@@ -364,9 +365,8 @@ test('WITHOUT: zero enforcement coverage', () => {
 section('verdict — Adherence');
 
 test('WITH: follows Claude Code hook protocol exactly', () => {
-  // PreToolUse hooks use exit 0 (allow) or exit 2 (block)
-  // hookSpecificOutput with permissionDecision for deny
-  // additionalContext for advisory
+  // Advisory mode: PreToolUse hooks always exit 0 (allow) and emit
+  // hookSpecificOutput.additionalContext as guidance. No deny, no exit 2.
   results['verdict_adherence_WITH'] = 10;
 });
 
@@ -410,9 +410,10 @@ test('WITHOUT: no overhead (perfect efficiency but no protection)', () => {
 
 section('verdict — Safety (enforcement-specific)');
 
-test('WITH: secrets always hard-blocked, no PECK bypass possible', () => {
-  // Secrets use exit 2 directly, not PECK tiers
-  results['verdict_safety_enforcement_WITH'] = 10;
+test('WITH: secrets deterministically detected + flagged on every write (advisory)', () => {
+  // Advisory mode: secrets are pattern-detected and surfaced as strong guidance
+  // on every write — deterministic detection, but the model decides (no block).
+  results['verdict_safety_enforcement_WITH'] = 8;
 });
 
 test('WITHOUT: secrets protection = model compliance only (~70%)', () => {

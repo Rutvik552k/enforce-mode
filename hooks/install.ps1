@@ -59,10 +59,17 @@ foreach ($file in $hookFiles) {
 $rulesDir = Join-Path $ClaudeDir 'rules'
 $domainsDir = Join-Path $rulesDir 'domains'
 New-Item -ItemType Directory -Path $domainsDir -Force | Out-Null
-Copy-Item (Join-Path $ScriptDir '..\rules\universal.md') -Destination $rulesDir -Force
+Copy-Item (Join-Path $ScriptDir '..\rules\CLAUDE.md') -Destination $rulesDir -Force
 Get-ChildItem (Join-Path $ScriptDir '..\rules\domains\*.md') | ForEach-Object {
     Copy-Item $_.FullName -Destination $domainsDir -Force
 }
+
+# Record exactly which domain rule files we copied — lets uninstall remove the
+# full set cleanly without touching the user's own domain rules.
+$ManifestPath = Join-Path $ClaudeDir '.enforce-rules-manifest'
+Get-ChildItem (Join-Path $ScriptDir '..\rules\domains\*.md') |
+    ForEach-Object { $_.Name } |
+    Set-Content -Path $ManifestPath -Encoding utf8
 
 # Copy skills
 $skillsDir = Join-Path $ClaudeDir 'skills\enforce'

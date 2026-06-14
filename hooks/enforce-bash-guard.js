@@ -1,30 +1,25 @@
 #!/usr/bin/env node
 /**
- * enforce-bash-guard.js — Consolidated PreToolUse hook for Bash
+ * enforce-bash-guard.js — PreToolUse hook for Bash (advisory)
  *
- * REPLACES: enforce-test-gate.js (now covers more rules)
+ * ADVISORY MODE: this guard NEVER blocks. It approves every command and injects
+ * guidance as additionalContext (plus a stderr line for the user). No exit(2),
+ * no permissionDecision:'deny', no PECK escalation.
  *
- * ENFORCES:
- *   Rule #2, #7-11 — Git discipline (no untested commits, no secrets, no binaries)
- *   Rule #3, #12   — Test before ship
- *   Rule #16-19    — All inference/GPU in background
- *   Rule #24-27    — Cost tracking and warnings
+ * CHECKS (all advisory — emitted as a single context payload):
+ *   - Foreground inference/GPU  → advisory (run in background)
+ *   - Sleep-poll anti-pattern   → advisory (use background + notification)
+ *   - git add of secrets/binaries → advisory (use explicit paths / .gitignore)
+ *   - git commit/push without tests → advisory (run tests first)
+ *   - Expensive cloud operation → advisory (track cost, warn >$5)
  *
- * GATES (v4 — Option E: Approve + Inject Context):
- *   - git add of secrets/binaries → HARD BLOCK (exit 2)
- *   - Foreground inference → HARD BLOCK (exit 2)
- *   - Long sleep-poll (>=30s) → HARD BLOCK (exit 2)
- *   - git commit/push without tests → APPROVE + inject strong context
- *   - Expensive cloud operation → APPROVE + inject warning
- *
- * NEVER uses permissionDecision:'deny' — zero deadlock risk.
- * Phase 2 (stop-guard) enforces accountability.
+ * Accountability still flows to the Stop hook (phase-2 checks).
  */
 
 'use strict';
 
 const fs = require('fs');
-const { isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent } = require('./enforce-state');
+const { isActive, peckTick, peckRecordCompliance, logEvent } = require('./enforce-state');
 
 // ═══════════════════════════════════════════════════════════
 // GIT GATES
@@ -33,7 +28,6 @@ const { isActive, peckEvaluate, peckTick, peckRecordCompliance, logEvent } = req
 const GIT_COMMIT_PATTERNS = [/git\s+commit/, /git\s+push/];
 const GIT_ADD_PATTERN = /git\s+add/;
 
-// Binary extensions that should never be committed
 const BINARY_EXTENSIONS = [
   '.safetensors', '.bin', '.pt', '.pth', '.ckpt', '.onnx', '.h5',
   '.mp4', '.avi', '.mov', '.mkv', '.webm',
@@ -42,14 +36,12 @@ const BINARY_EXTENSIONS = [
   '.exe', '.dll', '.so', '.dylib',
 ];
 
-// Secret file patterns
 const SECRET_FILES = [
   '.env', '.env.local', '.env.production', '.env.secret',
   'credentials.json', 'service-account.json', 'secrets.json',
   'id_rsa', 'id_ed25519', '.pem', '.key',
 ];
 
-// Test command patterns (substring match against transcript)
 const TEST_COMMANDS = [
   'cargo test', 'cargo nextest',
   'pytest', 'python -m pytest', 'python -m unittest',
@@ -61,8 +53,6 @@ const TEST_COMMANDS = [
   'node --test',
 ];
 
-// Regex patterns for test execution that substring matching can't catch
-// e.g. "node tests/test-config.js", "python test_auth.py", "ruby test/unit_test.rb"
 const TEST_COMMAND_REGEXES = [
   /node\s+\S*test/i,
   /python\s+\S*test/i,
@@ -79,27 +69,21 @@ const BUILD_COMMANDS = [
 ];
 
 // ═══════════════════════════════════════════════════════════
-// INFERENCE / GPU DETECTION (must run in background)
+// INFERENCE / GPU DETECTION (should run in background)
 // ═══════════════════════════════════════════════════════════
 
 const INFERENCE_PATTERNS = [
-  // Python ML scripts — match filenames/flags, not arbitrary substrings
-  // Anchored: python <space> <filename containing ML term>
   /^python\s+\S*inference\S*\.py/,
   /^python\s+\S*generate\S*\.py/,
   /^python\s+\S*predict\S*\.py/,
   /^python\s+\S*train\S*\.py/,
   /^python\s+\S*benchmark\S*\.py/,
   /^python\s+\S*(?:run_pipeline|run_model|forward_pass)\S*\.py/,
-  // PyTorch distributed — unambiguous commands
   /^torchrun\s+/,
   /^accelerate\s+launch/,
   /^python\s+-m\s+torch\.distributed/,
-  // Diffusers / ML frameworks — unambiguous
   /^python\s+\S*(?:diffus|stable.diff|comfyui|webui)\S*/i,
-  // FFmpeg long video processing
   /^ffmpeg\s+.*-i\s+\S+\.(mp4|avi|mov|mkv|webm)/,
-  // Weight conversion — requires both terms
   /^python\s+\S*(?:convert|quantiz|export)\S*.*(?:weight|model|ckpt|safetensor)/i,
 ];
 
@@ -108,11 +92,8 @@ const INFERENCE_PATTERNS = [
 // ═══════════════════════════════════════════════════════════
 
 const SLEEP_POLL_PATTERNS = [
-  // sleep N && check something
   /sleep\s+\d+\s*&&/,
-  // sleep N ; check something
   /sleep\s+\d+\s*;/,
-  // sleep used as a delay before reading output
   /sleep\s+\d+.*(?:cat|tail|head|wc|ls)/,
 ];
 
@@ -130,14 +111,11 @@ function getSleepDuration(cmd) {
 // ═══════════════════════════════════════════════════════════
 
 const COST_PATTERNS = [
-  // Cloud instance launch
   { pattern: /aws\s+ec2\s+run-instances/, msg: 'AWS EC2 instance launch — check instance type and cost/hr' },
   { pattern: /gcloud\s+compute\s+instances\s+create/, msg: 'GCP instance creation — verify pricing' },
   { pattern: /az\s+vm\s+create/, msg: 'Azure VM creation — check cost' },
-  // Large downloads
   { pattern: /huggingface-cli\s+download|hf_hub_download/, msg: 'HuggingFace model download — check size and egress cost' },
   { pattern: /wget\s+.*\.safetensors|curl\s+.*\.safetensors/, msg: 'Model weight download — check size' },
-  // Docker GPU
   { pattern: /docker\s+run.*--gpus/, msg: 'Docker GPU container — track GPU time cost' },
   { pattern: /nvidia-docker/, msg: 'GPU Docker container — track cost' },
 ];
@@ -191,25 +169,21 @@ function isInferenceCommand(cmd) {
 }
 
 function isBgCommand(input) {
-  // Check if the bash command is set to run in background
   return input.run_in_background === true;
 }
 
 function checkGitAddForSecrets(cmd) {
   const violations = [];
-  // Extract file paths from git add command (everything after "git add")
   const filesStr = cmd.replace(/git\s+add\s*/, '').trim();
   const files = filesStr.split(/\s+/).filter(f => f && !f.startsWith('-'));
 
   for (const file of files) {
     const basename = file.split('/').pop().split('\\').pop();
-    // Exact basename match for secret files (not substring)
     for (const sf of SECRET_FILES) {
       if (basename === sf || basename.startsWith(sf + '.')) {
         violations.push(`Secret file: ${sf} (in ${file})`);
       }
     }
-    // Extension match for binaries (check actual extension)
     const ext = '.' + basename.split('.').pop();
     for (const be of BINARY_EXTENSIONS) {
       if (ext === be) {
@@ -217,7 +191,6 @@ function checkGitAddForSecrets(cmd) {
       }
     }
   }
-  // git add . or git add -A (catch-all staging)
   if (/git\s+add\s+(-A|--all|\.\s*$)/.test(cmd)) {
     violations.push('Catch-all staging (git add . / -A) — may include secrets or binaries');
   }
@@ -227,15 +200,13 @@ function checkGitAddForSecrets(cmd) {
 function checkCostAlerts(cmd) {
   const alerts = [];
   for (const cp of COST_PATTERNS) {
-    if (cp.pattern.test(cmd)) {
-      alerts.push(cp.msg);
-    }
+    if (cp.pattern.test(cmd)) alerts.push(cp.msg);
   }
   return alerts;
 }
 
 // ═══════════════════════════════════════════════════════════
-// MAIN
+// MAIN — advisory only (accumulate guidance, emit once, never block)
 // ═══════════════════════════════════════════════════════════
 
 async function main() {
@@ -246,160 +217,85 @@ async function main() {
 
   if (toolName !== 'Bash') process.exit(0);
 
-  // Per-session isolation: skip if enforce is off for THIS session
   const sessionId = input.session_id || '';
   if (sessionId && !isActive(sessionId)) process.exit(0);
 
   const cmd = toolInput.command || '';
   if (!cmd) process.exit(0);
 
-  // Tick PECK recovery windows on every tool call
   peckTick(sessionId);
 
-  // ── CHECK 1: INFERENCE IN FOREGROUND (HARD BLOCK) ──
+  const outParts = [];
+
+  // ── CHECK 1: INFERENCE IN FOREGROUND ──
   if (isInferenceCommand(cmd) && !isBgCommand(toolInput)) {
-    logEvent(sessionId, { hook: 'bash-guard', action: 'block', file: cmd.substring(0, 80), result: 'inference-foreground' });
-    process.stderr.write(
-      '[ENFORCE HARD BLOCK] Inference/GPU task detected in foreground!\n' +
-      'Rules #16-19: ALL inference, generation, and GPU tasks MUST run in background.\n\n' +
-      'Detected command:\n  ' + cmd.substring(0, 200) + '\n\n' +
-      'Fix: Use run_in_background=true for Bash, or spawn a background Agent.\n' +
-      'NEVER let the main agent sit idle during inference.'
+    logEvent(sessionId, { hook: 'bash-guard', action: 'warn', file: cmd.substring(0, 80), result: 'inference-foreground' });
+    outParts.push(
+      'INFERENCE/GPU task in foreground: ' + cmd.substring(0, 160) + '\n' +
+      'Recommended: run with run_in_background=true (or a background Agent) so the main agent does not idle.'
     );
-    process.exit(2);
   }
 
-  // ── CHECK 1b: SLEEP-POLL ANTI-PATTERN (WARN or BLOCK) ──
+  // ── CHECK 1b: SLEEP-POLL ANTI-PATTERN ──
   if (isSleepPoll(cmd)) {
     const duration = getSleepDuration(cmd);
-    if (duration >= 30) {
-      // Block long sleeps — agent should not idle
-      logEvent(sessionId, { hook: 'bash-guard', action: 'block', file: cmd.substring(0, 80), result: 'sleep-poll-' + duration + 's' });
-      process.stderr.write(
-        '[ENFORCE BLOCK] Sleep-poll anti-pattern detected!\n' +
-        'Sleeping ' + duration + 's to poll output is wasteful.\n\n' +
-        'Detected command:\n  ' + cmd.substring(0, 200) + '\n\n' +
-        'Fix: Use run_in_background=true for the ORIGINAL command,\n' +
-        'then wait for the task notification. Do NOT sleep-and-check.\n' +
-        'Continue productive work while waiting.'
-      );
-      process.exit(2);
-    } else {
-      // Short sleeps get a warning — dual output
-      const sleepMsg = '[ENFORCE WARNING] Sleep-poll detected (sleep ' + duration + 's).\n' +
-        'Prefer waiting for background task notifications over polling.';
-      process.stderr.write('[BASH-GUARD] ' + sleepMsg + '\n');
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          additionalContext: sleepMsg,
-        },
-      };
-      process.stdout.write(JSON.stringify(output));
-    }
+    logEvent(sessionId, { hook: 'bash-guard', action: 'warn', file: cmd.substring(0, 80), result: 'sleep-poll-' + duration + 's' });
+    outParts.push(
+      'Sleep-poll anti-pattern (sleep ' + duration + 's): prefer run_in_background=true and wait for the\n' +
+      'task notification over sleep-and-check. Continue productive work while waiting.'
+    );
   }
 
-  // ── CHECK 2: GIT ADD WITH SECRETS/BINARIES (HARD BLOCK) ──
+  // ── CHECK 2: GIT ADD WITH SECRETS/BINARIES ──
   if (isGitAdd(cmd)) {
     const violations = checkGitAddForSecrets(cmd);
     if (violations.length > 0) {
-      logEvent(sessionId, { hook: 'bash-guard', action: 'block', file: cmd.substring(0, 80), result: 'secrets-binaries', details: { violations: violations.length } });
-      process.stderr.write(
-        '[ENFORCE HARD BLOCK] Dangerous git add detected!\n' +
-        'Rules #9-11: Never commit secrets, tokens, or large binaries.\n\n' +
-        'Violations:\n' +
-        violations.map(v => `  - ${v}`).join('\n') + '\n\n' +
-        'Use specific file paths instead of git add . and ensure .gitignore covers secrets and binaries.'
+      logEvent(sessionId, { hook: 'bash-guard', action: 'warn', file: cmd.substring(0, 80), result: 'secrets-binaries', details: { violations: violations.length } });
+      outParts.push(
+        'Risky git add — may stage secrets or large binaries:\n' +
+        violations.map(v => `  - ${v}`).join('\n') + '\n' +
+        'Use explicit file paths instead of git add . / -A, and ensure .gitignore covers secrets and binaries.'
       );
-      process.exit(2);
     }
   }
 
   // ── CHECK 3: GIT COMMIT/PUSH WITHOUT TESTS ──
   if (isGitCommitPush(cmd)) {
-    // If transcript is unavailable, fall back to soft warn (not hard block)
-    // This prevents deadlock in doc-only projects or early-session commits
     if (!transcriptPath) {
-      const noTranscriptMsg = '[ENFORCE WARNING] No transcript available to verify test execution.\n' +
-        'Rule #3: Ensure tests were run before committing.';
-      process.stderr.write('[BASH-GUARD] ' + noTranscriptMsg + '\n');
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          additionalContext: noTranscriptMsg,
-        },
-      };
-      process.stdout.write(JSON.stringify(output));
-      process.exit(0);
-    }
+      outParts.push('No transcript available to verify tests ran — ensure tests were run before committing.');
+    } else {
+      const hasTests = transcriptHas(transcriptPath, TEST_COMMANDS) ||
+                       transcriptMatchesRegex(transcriptPath, TEST_COMMAND_REGEXES);
+      const hasBuilds = transcriptHas(transcriptPath, BUILD_COMMANDS);
 
-    const hasTests = transcriptHas(transcriptPath, TEST_COMMANDS) ||
-                     transcriptMatchesRegex(transcriptPath, TEST_COMMAND_REGEXES);
-    const hasBuilds = transcriptHas(transcriptPath, BUILD_COMMANDS);
-
-    if (!hasTests && !hasBuilds) {
-      const reason =
-        'git commit/push without tests or builds in this session.\n' +
-        'Rules #2, #3: Never push untested code.\n' +
-        'Run tests first (cargo test, pytest, npm test, etc.).';
-
-      const result = peckEvaluate(sessionId, 'test', cmd, reason);
-      logEvent(sessionId, { hook: 'bash-guard', action: 'escalate', file: cmd.substring(0, 80), result: 'no-tests-tier' + result.tier });
-
-      if (result.tier >= 3) {
-        process.stderr.write(result.message);
-        process.exit(2);
+      if (!hasTests && !hasBuilds) {
+        logEvent(sessionId, { hook: 'bash-guard', action: 'warn', file: cmd.substring(0, 80), result: 'no-tests' });
+        outParts.push(
+          'git commit/push without tests or builds this session.\n' +
+          'Recommended: run tests first (cargo test, pytest, npm test, …) before committing.'
+        );
+      } else if (hasTests) {
+        peckRecordCompliance(sessionId, 'test', cmd);
+      } else if (!hasTests && hasBuilds) {
+        outParts.push('Build found but no test execution — run actual tests, not just builds.');
       }
-      if (result.tier === 2) {
-        const output = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-          permissionDecision: 'deny',
-          permissionDecisionReason: result.message }};
-        process.stdout.write(JSON.stringify(output));
-        process.exit(0);
-      }
-      // Tier 0-1: approve + dual output (stderr for user, context for Claude)
-      process.stderr.write('[BASH-GUARD] ' + result.message + '\n');
-      const output = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-        additionalContext: result.message }};
-      process.stdout.write(JSON.stringify(output));
-      process.exit(0);
-    }
-
-    if (hasTests) {
-      // Compliance — decay PECK violations for test category
-      peckRecordCompliance(sessionId, 'test', cmd);
-    }
-
-    if (!hasTests && hasBuilds) {
-      const buildNoTestMsg = '[ENFORCE WARNING] Build found but no test execution.\n' +
-        'Rule #3, #12: Run actual tests, not just builds.';
-      process.stderr.write('[BASH-GUARD] ' + buildNoTestMsg + '\n');
-      const output = {
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          additionalContext: buildNoTestMsg,
-        },
-      };
-      process.stdout.write(JSON.stringify(output));
-      process.exit(0);
     }
   }
 
-  // ── CHECK 4: COST ALERTS (SOFT WARN) ──
+  // ── CHECK 4: COST ALERTS ──
   const costAlerts = checkCostAlerts(cmd);
   if (costAlerts.length > 0) {
     logEvent(sessionId, { hook: 'bash-guard', action: 'warn', file: cmd.substring(0, 80), result: 'cost-alert', details: { alerts: costAlerts.length } });
-    const costMsg = '[ENFORCE COST ALERT] Rules #24-27:\n' +
-      costAlerts.map(a => `  - ${a}`).join('\n') + '\n' +
-      'Track cost ($/hr x estimated time). Warn user if >$5.';
-    process.stderr.write('[BASH-GUARD] ' + costMsg + '\n');
-    const output = {
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        additionalContext: costMsg,
-      },
-    };
-    process.stdout.write(JSON.stringify(output));
+    outParts.push(
+      'COST ALERT:\n' + costAlerts.map(a => `  - ${a}`).join('\n') + '\n' +
+      'Track cost ($/hr × estimated time). Warn the user before anything over $5.'
+    );
+  }
+
+  if (outParts.length > 0) {
+    const msg = outParts.join('\n\n');
+    process.stderr.write('[BASH-GUARD] ' + msg + '\n');
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: msg } }));
   }
 
   process.exit(0);

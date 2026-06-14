@@ -1,32 +1,27 @@
 #!/usr/bin/env node
 /**
- * enforce-write-guard.js — PreToolUse hook for Write|Edit|NotebookEdit (v5 PECK)
+ * enforce-write-guard.js — PreToolUse hook for Write|Edit|NotebookEdit (advisory)
  *
- * PECK: Progressive Escalation with Circuit-breaker and K-step recovery
+ * ADVISORY MODE: this guard NEVER blocks. It approves every write and injects
+ * guidance as additionalContext (plus a stderr line for the user). No exit(2),
+ * no permissionDecision:'deny', no PECK escalation ladder.
  *
- * GATES:
- *   - Secrets detected → HARD BLOCK (exit 2) — always, no escalation
- *   - External imports without research → PECK escalation (tier 0→3)
- *   - Security anti-patterns → PECK escalation via 'security' category
+ * CHECKS (all advisory — emitted as a single context payload):
+ *   - Secrets detected           → strong advisory (do not commit; use a manager)
+ *   - External imports w/o research → advisory (verify API signatures first)
+ *   - Ungrounded API symbols     → advisory (UNVERIFIED — may be hallucinated)
+ *   - Security anti-patterns     → advisory (review before saving)
  *
- * TIERS:
- *   0: APPROVE + advisory context
- *   1: APPROVE + strong warning with escalation notice
- *   2: DENY (1 retry before auto-escalate)
- *   3: HARD BLOCK (exit 2, terminates retry loop)
- *
- * DEADLOCK PREVENTION:
- *   - Tier 2 (deny) bounded — max 1 retry before tier 3 hard-block
- *   - Circuit breaker opens after 3 failures → all actions hard-blocked
- *   - Self-exemption: .claude/hooks/, enforce-mode/hooks/, test files
- *   - Stdlib whitelist: never triggers research gate
+ * Level gating (advisory severity): STRICT advisories show at team+; ALWAYS at all.
+ * Exemptions: enforce-mode/.claude hook files, skipped extensions, stdlib-only.
+ * Accountability still flows to the Stop hook via recordPending().
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-const { recordPending, isActive, getLevel, peckEvaluateV2, peckTick, peckRecordComplianceV2, logEvent, isSkippedExtension, isExemptFilePath, getGroundTruth, getResearchedLibs } = require('./enforce-state');
+const { recordPending, isActive, getLevel, peckTick, logEvent, isSkippedExtension, isExemptFilePath, getGroundTruth, getResearchedLibs } = require('./enforce-state');
 const { extractApiSymbols, groundSymbols } = require('./enforce-grounding');
 
 // ═══════════════════════════════════════════════════════════
@@ -58,7 +53,6 @@ const SECRET_PATTERNS = [
 // ═══════════════════════════════════════════════════════════
 
 const SECURITY_PATTERNS = [
-  // Tightened: require function def after route decorator (multiline handled by source scan)
   { name: 'SQL string concat', regex: /(?:execute|query)\s*\(\s*f?['"].*(?:SELECT|INSERT|UPDATE|DELETE).*\+/ },
   { name: 'SQL f-string', regex: /f['"](?:SELECT|INSERT|UPDATE|DELETE)\s+.*\{/ },
   { name: 'eval() usage', regex: /\beval\s*\([^)]+\)/ },
@@ -86,8 +80,6 @@ const IMPORT_PATTERNS = [
   /^\s*extern\s+crate/m,
   /^\s*import\s+\(/m,
 ];
-
-// SKIP_EXTENSIONS: now centralized in enforce-state.js (isSkippedExtension)
 
 // ═══════════════════════════════════════════════════════════
 // STDLIB WHITELIST
@@ -130,25 +122,17 @@ function isStdlibOnly(source) {
 // PER-LIBRARY RESEARCH TRACKING
 // ═══════════════════════════════════════════════════════════
 
-// Common well-known libraries that don't need research verification
 const COMMON_LIBS = new Set([
-  // JS ecosystem
   'express', 'react', 'react-dom', 'next', 'vue', 'angular',
   'lodash', 'underscore', 'axios', 'node-fetch', 'chalk',
   'dotenv', 'cors', 'helmet', 'morgan', 'body-parser',
   'jest', 'mocha', 'chai', 'vitest', 'prettier', 'eslint',
   'typescript', 'webpack', 'vite', 'rollup', 'esbuild',
-  // Python ecosystem
   'pytest', 'flask', 'django', 'fastapi', 'requests',
   'numpy', 'pandas', 'matplotlib', 'click', 'pydantic',
   'black', 'flake8', 'mypy', 'pylint', 'setuptools', 'pip',
 ]);
 
-/**
- * Extract external (non-stdlib, non-common) library names from source.
- * @param {string} source
- * @returns {string[]} unique external library names
- */
 function extractExternalLibs(source) {
   const importNames = [];
   for (const m of source.matchAll(/^\s*(?:import|from)\s+([a-zA-Z_][a-zA-Z0-9_.]*)/gm)) {
@@ -161,23 +145,13 @@ function extractExternalLibs(source) {
     importNames.push(m[1].split('/')[0].toLowerCase());
   }
   const allStdlib = new Set([...NODE_STDLIB, ...PYTHON_STDLIB].map(s => s.toLowerCase()));
-  // Normalize scoped packages: @prisma/client → prisma
-  const normalized = importNames.map(name =>
-    name.startsWith('@') ? name.slice(1) : name
-  );
+  const normalized = importNames.map(name => name.startsWith('@') ? name.slice(1) : name);
   const external = [...new Set(normalized)].filter(
     name => !allStdlib.has(name) && !COMMON_LIBS.has(name) && !name.startsWith('.')
   );
   return external;
 }
 
-/**
- * Check transcript for per-library research evidence.
- * Returns { researched: string[], unresearched: string[] }
- * @param {string} transcriptPath
- * @param {string[]} libs — external library names to check
- * @returns {{ researched: string[], unresearched: string[] }}
- */
 function checkResearchForLibs(transcriptPath, libs) {
   if (!libs.length) return { researched: [], unresearched: [] };
   let content = '';
@@ -190,7 +164,6 @@ function checkResearchForLibs(transcriptPath, libs) {
     return { researched: [], unresearched: libs };
   }
 
-  // Must have at least one research tool used
   const hasAnyResearch = RESEARCH_TOOLS.some(tool => content.includes(tool.toLowerCase()));
   if (!hasAnyResearch) {
     return { researched: [], unresearched: libs };
@@ -199,21 +172,11 @@ function checkResearchForLibs(transcriptPath, libs) {
   const researched = [];
   const unresearched = [];
   for (const lib of libs) {
-    // Check if library name appears in transcript (in search queries, URLs, etc.)
-    if (content.includes(lib)) {
-      researched.push(lib);
-    } else {
-      unresearched.push(lib);
-    }
+    if (content.includes(lib)) researched.push(lib);
+    else unresearched.push(lib);
   }
   return { researched, unresearched };
 }
-
-// ═══════════════════════════════════════════════════════════
-// SELF-EXEMPTION
-// ═══════════════════════════════════════════════════════════
-
-// EXEMPT_PATHS: now centralized in enforce-state.js (isExemptFilePath)
 
 // ═══════════════════════════════════════════════════════════
 // CORE
@@ -255,30 +218,21 @@ function hasImports(source) {
   return IMPORT_PATTERNS.some(p => p.test(source));
 }
 
-/**
- * Build PECK-tier-aware hook output.
- * Tier 0-1: approve + additionalContext
- * Tier 2:   deny + permissionDecisionReason
- * Tier 3:   stderr + exit 2
- */
-function emitPeckResult(result) {
-  if (result.tier >= 3) {
-    process.stderr.write(result.message);
-    process.exit(2);
-  }
+// ═══════════════════════════════════════════════════════════
+// ADVISORY EMISSION (approve + inject context — never blocks)
+// ═══════════════════════════════════════════════════════════
 
-  if (result.tier === 2) {
-    const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-      permissionDecision: 'deny',
-      permissionDecisionReason: result.message }};
-    process.stdout.write(JSON.stringify(out));
-    process.exit(0);
-  }
+// Advisory severity → minimum level (mirrors enforce-rules SEVERITY_MIN_LEVEL).
+const LVL = { solo: 0, team: 1, prod: 2 };
+const SEV_MIN = { ALWAYS: 0, WARN: 0, STRICT: 1, CRITICAL: 2 };
+function severityActive(severity, level) {
+  return (LVL[level] ?? 0) >= (SEV_MIN[severity] ?? 0);
+}
 
-  // Tier 0 or 1: approve + dual output (stderr for user, context for Claude)
-  process.stderr.write('[WRITE-GUARD] ' + result.message + '\n');
-  const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-    additionalContext: result.message }};
+// Emit one approve + additionalContext payload (dual output), then exit 0.
+function emitAdvisory(message) {
+  process.stderr.write('[WRITE-GUARD] ' + message + '\n');
+  const out = { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: message } };
   process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }
@@ -303,92 +257,65 @@ async function main() {
 
   if (!source) process.exit(0);
 
-  // Tick PECK recovery windows on every tool call
   peckTick(sessionId);
 
-  // ── CHECK 1: SECRETS (always, even on exempt paths) ──
+  // ── CHECK 1: SECRETS (advisory, always — even on exempt paths) ──
   const secrets = scanSecrets(source);
   if (secrets.length > 0) {
-    logEvent(sessionId, { hook: 'write-guard', action: 'block', file: filePath, result: 'secrets', details: { types: secrets } });
-    process.stderr.write(
-      '[ENFORCE HARD BLOCK] Secrets detected!\n' +
-      'Detected:\n' + secrets.map(s => `  - ${s}`).join('\n') + '\n\n' +
-      'Use environment variables or a secret manager. Remove and retry.'
+    logEvent(sessionId, { hook: 'write-guard', action: 'warn', file: filePath, result: 'secrets', details: { types: secrets } });
+    emitAdvisory(
+      'SECRETS DETECTED — do NOT write or commit these literal values:\n' +
+      secrets.map(s => `  - ${s}`).join('\n') + '\n\n' +
+      'Use environment variables or a secret manager. Replace the value before saving.'
     );
-    process.exit(2);
+    return;
   }
 
   // Skip non-code and exempt paths for remaining checks
   if (!isCodeFile(filePath) || isExemptFilePath(filePath)) process.exit(0);
 
   const level = (sessionId && getLevel(sessionId)) || 'solo';
+  const outParts = [];
 
-  // ── CHECK 2: RESEARCH GATE (ground truth + immediate deny) ──
+  // ── CHECK 2: RESEARCH / GROUNDING ──
   if (hasImports(source) && !isStdlibOnly(source)) {
     const externalLibs = extractExternalLibs(source);
 
     if (externalLibs.length > 0) {
-      // Check ground truth (captured search results) per library
-      // TTL: ground truth expires after 30 minutes — forces re-search
       const GT_TTL_MS = 30 * 60 * 1000;
       const withTruth = [];
       const withoutTruth = [];
       for (const lib of externalLibs) {
         const gt = getGroundTruth(sessionId, lib);
-        if (gt && (Date.now() - gt.ts) < GT_TTL_MS) {
-          withTruth.push(lib);
-        } else {
-          withoutTruth.push(lib);
-        }
+        if (gt && (Date.now() - gt.ts) < GT_TTL_MS) withTruth.push(lib);
+        else withoutTruth.push(lib);
       }
 
-      // Fallback: also check transcript for library mentions (backward compat)
       const stillMissing = [];
       if (withoutTruth.length > 0) {
         const { researched } = checkResearchForLibs(transcriptPath, withoutTruth);
         for (const lib of withoutTruth) {
-          if (researched.includes(lib)) {
-            withTruth.push(lib);
-          } else {
-            stillMissing.push(lib);
-          }
+          if (researched.includes(lib)) withTruth.push(lib);
+          else stillMissing.push(lib);
         }
       }
 
+      // Unresearched libraries → advisory (recorded for the Stop-hook reminder).
       if (stillMissing.length > 0) {
         recordPending(sessionId, 'research', filePath, stillMissing);
-
         const libList = stillMissing.slice(0, 5).join(', ');
         const more = stillMissing.length > 5 ? ' (+' + (stillMissing.length - 5) + ' more)' : '';
-        const reason =
+        logEvent(sessionId, { hook: 'write-guard', action: 'warn', file: filePath, result: 'research-missing', details: { missing: stillMissing, researched: withTruth } });
+        emitAdvisory(
           'GROUND TRUTH MISSING — libraries used without research: ' + libList + more + '\n' +
           'File: ' + filePath + '\n\n' +
-          'REQUIRED: WebSearch/context7 for each library BEFORE writing code.\n' +
-          'Search for docs, verify API signatures, then write.' +
-          (withTruth.length > 0 ? '\nAlready researched: ' + withTruth.join(', ') : '');
-
-        // research-mandatory: budget=1 → first violation = immediate T2 deny
-        const result = peckEvaluateV2(sessionId, 'research-mandatory', filePath, reason, {
-          confidence: 'HIGH',
-          severity: 'ALWAYS',
-          level,
-          source: '',       // skip context detection — always enforce
-          matchIndex: -1,
-          domainActive: true,
-          patternName: 'research-mandatory-' + stillMissing[0],
-        });
-        if (result.suppressed || !result.message) { process.exit(0); }
-        logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'research-mandatory-tier' + result.tier, details: { missing: stillMissing, researched: withTruth } });
-        emitPeckResult(result);
+          'Recommended: WebSearch/context7 each library and verify API signatures before relying on this code.' +
+          (withTruth.length > 0 ? '\nAlready researched: ' + withTruth.join(', ') : '')
+        );
         return;
       }
 
-      // ── CHECK 2b: SYMBOL GROUNDING (citation-attribution layer) ──
-      // Research happened at the library level — now verify the specific API
-      // symbols the code calls actually appear in the researched docs. A symbol
-      // with no source is UNVERIFIED (likely hallucinated signature).
-      // Conditional firing: only runs when ground truth exists to check against,
-      // so it never second-guesses code for un-researched libs (FP control).
+      // ── CHECK 2b: SYMBOL GROUNDING (advisory; STRICT → team+) ──
       const allSnippets = withTruth
         .map(lib => getGroundTruth(sessionId, lib))
         .filter(Boolean)
@@ -397,43 +324,22 @@ async function main() {
 
       const symbols = extractApiSymbols(source);
       const { ungrounded } = groundSymbols(symbols, allSnippets);
-      // Only escalate HIGH-confidence ungrounded symbols (deep SDK-style chains).
       const highUngrounded = ungrounded.filter(s => s.confidence === 'HIGH');
 
-      let groundingAdvisory = '';   // tier 0-1 message, injected alongside snippets
-      if (allSnippets.length > 0 && highUngrounded.length > 0) {
+      if (allSnippets.length > 0 && highUngrounded.length > 0 && severityActive('STRICT', level)) {
         const symList = highUngrounded.slice(0, 5).map(s => s.full + '()').join(', ');
         const more = highUngrounded.length > 5 ? ' (+' + (highUngrounded.length - 5) + ' more)' : '';
-        const gReason =
+        logEvent(sessionId, { hook: 'write-guard', action: 'warn', file: filePath, result: 'grounding', details: { ungrounded: highUngrounded.map(s => s.full) } });
+        outParts.push(
           'UNVERIFIED API symbols — called but NOT found in any researched docs: ' + symList + more + '\n' +
           'File: ' + filePath + '\n\n' +
-          'You researched the library but these specific methods have no source. They may be hallucinated.\n' +
-          'REQUIRED: WebSearch/context7 the exact symbol(s) to confirm they exist, OR tag each as\n' +
-          '`// UNVERIFIED: <symbol>` and tell the user it is from training memory, not verified docs.';
-
-        // STRICT severity → suppressed at solo, max T2 at team/prod (never permanent block).
-        const gResult = peckEvaluateV2(sessionId, 'grounding', filePath, gReason, {
-          confidence: 'MEDIUM',
-          severity: 'STRICT',
-          level,
-          source,
-          matchIndex: -1,
-          domainActive: true,
-          patternName: 'grounding-' + highUngrounded[0].full,
-        });
-        if (!gResult.suppressed && gResult.message) {
-          logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'grounding-tier' + gResult.tier, details: { ungrounded: highUngrounded.map(s => s.full) } });
-          // Deny/block (tier >= 2) terminates the write here.
-          if (gResult.tier >= 2) { emitPeckResult(gResult); return; }
-          // Advisory (tier 0-1): carry the message into the context injected below.
-          groundingAdvisory = gResult.message;
-        }
-      } else {
-        // All called symbols are grounded → grounding compliance (decays prior violations).
-        peckRecordComplianceV2(sessionId, 'grounding', filePath, 'MEDIUM');
+          'These specific methods have no source — they may be hallucinated.\n' +
+          'Recommended: WebSearch/context7 the exact symbol(s) to confirm they exist, OR tag each\n' +
+          '`// UNVERIFIED: <symbol>` and tell the user it is from training memory, not verified docs.'
+        );
       }
 
-      // All libs have ground truth — inject snippets (+ any grounding advisory) as context.
+      // Inject researched-doc snippets as helpful context.
       const snippetContext = [];
       for (const lib of withTruth.slice(0, 3)) {
         const gt = getGroundTruth(sessionId, lib);
@@ -441,51 +347,24 @@ async function main() {
           snippetContext.push('[' + lib + '] ' + gt.snippets[0].substring(0, 200));
         }
       }
-      if (snippetContext.length > 0 || groundingAdvisory) {
-        const parts = [];
-        if (groundingAdvisory) parts.push(groundingAdvisory);
-        if (snippetContext.length > 0) {
-          parts.push('[GROUND TRUTH] Relevant docs for your code:\n' + snippetContext.join('\n'));
-        }
-        const ctxMsg = parts.join('\n\n');
-        process.stderr.write('[WRITE-GUARD] ' + ctxMsg + '\n');
-        // Inject as additional context so Claude sees docs (and any UNVERIFIED flag).
-        const out = { hookSpecificOutput: { hookEventName: 'PreToolUse',
-          additionalContext: ctxMsg }};
-        process.stdout.write(JSON.stringify(out));
-        // Don't exit — continue to security checks
+      if (snippetContext.length > 0) {
+        outParts.push('[GROUND TRUTH] Relevant docs for your code:\n' + snippetContext.join('\n'));
       }
-
-      peckRecordComplianceV2(sessionId, 'research-mandatory', filePath, 'HIGH');
-      peckRecordComplianceV2(sessionId, 'research', filePath, 'MEDIUM');
-    } else if (checkResearch(transcriptPath)) {
-      peckRecordComplianceV2(sessionId, 'research', filePath, 'MEDIUM');
     }
   }
 
-  // ── CHECK 3: SECURITY SCAN (PECK v2 escalation) ──
+  // ── CHECK 3: SECURITY SCAN (advisory; STRICT → team+) ──
   const secIssues = scanSecurity(source);
-  if (secIssues.length > 0) {
-    const reason =
+  if (secIssues.length > 0 && severityActive('STRICT', level)) {
+    logEvent(sessionId, { hook: 'write-guard', action: 'warn', file: filePath, result: 'security', details: { issues: secIssues } });
+    outParts.push(
       'Security anti-patterns detected:\n' +
       secIssues.map(s => `  - ${s}`).join('\n') + '\n' +
-      'File: ' + filePath;
-
-    const result = peckEvaluateV2(sessionId, 'security-patterns', filePath, reason, {
-      confidence: 'MEDIUM',
-      severity: 'STRICT',
-      level,
-      source,
-      matchIndex: -1,
-      domainActive: true,
-      patternName: 'security-' + secIssues[0].replace(/\s+/g, '-').toLowerCase(),
-    });
-    if (result.suppressed || !result.message) { process.exit(0); }
-    logEvent(sessionId, { hook: 'write-guard', action: 'escalate', file: filePath, result: 'security-tier' + result.tier, details: { issues: secIssues } });
-    emitPeckResult(result);
-    return;
+      'File: ' + filePath + '\nReview and fix before saving.'
+    );
   }
 
+  if (outParts.length > 0) emitAdvisory(outParts.join('\n\n'));
   process.exit(0);
 }
 

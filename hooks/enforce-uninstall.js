@@ -31,6 +31,23 @@ const hooksDir = path.join(claudeDir, 'hooks');
 const settingsPath = path.join(claudeDir, 'settings.json');
 const flagPath = path.join(claudeDir, '.enforce-active');
 const sessionsDir = path.join(claudeDir, 'enforce-sessions');
+const rulesManifestPath = path.join(claudeDir, '.enforce-rules-manifest');
+
+// Full set of domain rule files enforce-mode ships (install copies all of them).
+// Used as a fallback when no install-time manifest is present (older installs).
+const SHIPPED_DOMAINS = [
+  'accessibility.md', 'api-design.md', 'api-security.md', 'auth.md',
+  'background-jobs.md', 'blockchain.md', 'book-generation.md', 'caching.md',
+  'cicd-security.md', 'config-management.md', 'container-security.md',
+  'cost-tracking.md', 'database.md', 'dependency-mgmt.md', 'design-tokens.md',
+  'error-handling.md', 'feature-flags.md', 'frontend.md', 'gpu-hardware.md',
+  'graphql.md', 'i18n.md', 'iac.md', 'iac-security.md', 'licensing.md',
+  'llm-safety.md', 'logging.md', 'microservices.md', 'migration.md',
+  'ml-inference.md', 'mobile.md', 'model-training.md', 'multi-tenancy.md',
+  'observability.md', 'payment.md', 'privacy.md', 'research-paper.md',
+  'resilience.md', 'seo.md', 'supply-chain.md', 'testing.md',
+  'video-pipeline.md',
+];
 
 function getConfigDir() {
   if (process.env.XDG_CONFIG_HOME) {
@@ -99,20 +116,45 @@ try {
 try {
   const rulesDir = path.join(claudeDir, 'rules');
   const domainsDir = path.join(rulesDir, 'domains');
-  // Remove domain rule files that enforce-mode installed
-  const enforceDomains = ['api-security.md', 'cost-tracking.md', 'gpu-hardware.md', 'ml-inference.md', 'video-pipeline.md'];
+
+  // Prefer the install-time manifest: the exact set this install copied, so we
+  // never delete a domain rule the user authored themselves. Fall back to the
+  // full shipped set for installs predating the manifest.
+  let domainFiles = [];
+  try {
+    if (fs.existsSync(rulesManifestPath)) {
+      domainFiles = fs.readFileSync(rulesManifestPath, 'utf8')
+        .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    }
+  } catch { /* fall through to static list */ }
+  if (domainFiles.length === 0) domainFiles = SHIPPED_DOMAINS;
+
   let domainCount = 0;
-  for (const d of enforceDomains) {
+  for (const d of domainFiles) {
     const p = path.join(domainsDir, d);
-    if (fs.existsSync(p)) { fs.unlinkSync(p); domainCount++; }
+    try { if (fs.existsSync(p)) { fs.unlinkSync(p); domainCount++; } } catch { /* skip */ }
   }
-  // Remove universal.md if it contains enforce marker
-  const universalPath = path.join(rulesDir, 'universal.md');
-  if (fs.existsSync(universalPath)) {
-    const content = fs.readFileSync(universalPath, 'utf8');
-    if (content.includes('ENFORCE MODE') || content.includes('enforce')) {
-      fs.unlinkSync(universalPath);
-      domainCount++;
+
+  // Remove the manifest itself
+  try { if (fs.existsSync(rulesManifestPath)) fs.unlinkSync(rulesManifestPath); } catch { /* ignore */ }
+
+  // Remove the domains dir only if now empty (leave the user's own rules alone)
+  try {
+    if (fs.existsSync(domainsDir) && fs.readdirSync(domainsDir).length === 0) {
+      fs.rmdirSync(domainsDir);
+    }
+  } catch { /* not empty / in use — fine */ }
+
+  // Remove the built-in CLAUDE.md (formerly universal.md) if it is enforce-mode's.
+  // Check both names so older installs are cleaned up too.
+  for (const fname of ['CLAUDE.md', 'universal.md']) {
+    const p = path.join(rulesDir, fname);
+    if (fs.existsSync(p)) {
+      const content = fs.readFileSync(p, 'utf8');
+      if (content.includes('ENFORCE MODE') || content.includes('enforce')) {
+        fs.unlinkSync(p);
+        domainCount++;
+      }
     }
   }
   if (domainCount > 0) removed.push(`${domainCount} rule files from ~/.claude/rules/`);

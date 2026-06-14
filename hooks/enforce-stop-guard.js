@@ -291,44 +291,8 @@ async function main() {
 
   } // end !skipEnforcement
 
-  // ── PECK ENFORCEMENT SUMMARY (always — useful even without code writes) ──
-  if (sessionId) {
-    const peck = peckGetSummary(sessionId);
-
-    // Dead letters — actions that hit tier 3 and were permanently blocked
-    if (peck.deadLetterCount > 0) {
-      warnings.push(
-        '[PECK — DEAD LETTERS] ' + peck.deadLetterCount + ' action(s) were permanently blocked:',
-        ...peck.deadLetters.map(d =>
-          '  - [' + d.category + '] ' + (d.file || 'unknown') + ': ' + d.reason.split('\n')[0]
-        ),
-        'These represent unresolved compliance failures.'
-      );
-    }
-
-    // Active violations summary
-    const violationEntries = Object.entries(peck.violations);
-    if (violationEntries.length > 0) {
-      const lines = violationEntries.map(([cat, v]) =>
-        '  - ' + cat + ': tier ' + v.tier + ' (' + v.tierName + '), ' +
-        v.count + '/' + v.budget + ' violations, ' + v.remaining + ' remaining'
-      );
-      warnings.push(
-        '[PECK — ESCALATION STATUS]',
-        ...lines
-      );
-    }
-
-    // Circuit breaker status
-    const openCircuits = Object.entries(peck.circuits)
-      .filter(([, state]) => state !== 'CLOSED');
-    if (openCircuits.length > 0) {
-      warnings.push(
-        '[PECK — CIRCUIT BREAKERS]',
-        ...openCircuits.map(([cat, state]) => '  - ' + cat + ': ' + state)
-      );
-    }
-  }
+  // Advisory mode: no PECK escalation/deny/dead-letter summary — the guards
+  // only advise, never block, so there is no escalation state to report.
 
   // ── ACTIVITY LOG SUMMARY ──
   const logLines = [];
