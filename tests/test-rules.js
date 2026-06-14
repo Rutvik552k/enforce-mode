@@ -168,5 +168,47 @@ test('buildContext includes persistence and anti-patterns', () => {
   assert.ok(output.includes('Anti-Patterns'));
 });
 
+// Test new governance rules are present at solo and active always-on
+test('solo context includes routing, SDLC, anchor-sync, clean-codebase rules', () => {
+  const output = buildContext('solo', [], pluginRoot);
+  assert.ok(output.includes('DEPARTMENT ROUTING'), 'missing routing rule');
+  assert.ok(output.includes('SDLC LOOP'), 'missing SDLC loop rule');
+  assert.ok(output.includes('ANCHOR SYNC'), 'missing anchor-sync rule');
+  assert.ok(output.includes('CLEAN CODEBASE'), 'missing clean-codebase rule');
+});
+
+test('anchor-sync and clean-codebase are solo-level (always on)', () => {
+  for (const id of ['anchor-sync', 'clean-codebase']) {
+    const rule = UNIVERSAL_RULES.find(r => r.id === id);
+    assert.ok(rule, id + ' rule missing from registry');
+    assert.strictEqual(rule.minLevel, 'solo', id + ' should be solo-level');
+  }
+});
+
+test('byte budget honored at prod with 5 domains', () => {
+  const allDomains = [
+    { domain: 'ml-inference', score: 10 },
+    { domain: 'gpu-hardware', score: 8 },
+    { domain: 'video-pipeline', score: 6 },
+    { domain: 'api-security', score: 5 },
+    { domain: 'cost-tracking', score: 4 },
+  ];
+  const bytes = Buffer.byteLength(buildContext('prod', allDomains, pluginRoot), 'utf8');
+  assert.ok(bytes <= MAX_BUDGET, 'prod byte size ' + bytes + ' exceeds ' + MAX_BUDGET);
+});
+
+// Anchor module
+const anchor = require('../hooks/enforce-anchor');
+test('enforce-anchor exposes markers and detection API', () => {
+  assert.ok(anchor.ANCHOR_START.includes('enforce-anchor:start'));
+  assert.ok(anchor.ANCHOR_END.includes('enforce-anchor:end'));
+  assert.strictEqual(typeof anchor.hasAnchor, 'function');
+  assert.strictEqual(typeof anchor.readAnchor, 'function');
+});
+
+test('hasAnchor false on a directory without a marked CLAUDE.md', () => {
+  assert.strictEqual(anchor.hasAnchor(__dirname), false);
+});
+
 console.log('\nResults: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed > 0 ? 1 : 0);

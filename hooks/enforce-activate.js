@@ -21,6 +21,7 @@ const { getDefaultLevel } = require('./enforce-config');
 const { detectDomains } = require('./enforce-detect');
 const { buildContext } = require('./enforce-rules');
 const { setLevel, logEvent } = require('./enforce-state');
+const { hasAnchor } = require('./enforce-anchor');
 
 const claudeDir = path.join(os.homedir(), '.claude');
 const flagPath = path.join(claudeDir, '.enforce-active');
@@ -180,6 +181,15 @@ process.stdin.on('end', () => {
       action: 'skills-detected',
       details: { skills: detectedSkills },
     });
+  }
+
+  // 7. Anchor reminder — if no local CLAUDE.md anchor, nudge the main agent to
+  //    create one when the user states a goal (anti-drift reference). One line,
+  //    advisory — never auto-writes the user's CLAUDE.md.
+  if (!hasAnchor(process.cwd())) {
+    output += '\n\n## Project Anchor (none yet)\n' +
+      'No enforce anchor in ./CLAUDE.md. When the user gives a goal, run `/enforce-init "<goal>"` ' +
+      'to record goal + tech stack + requirements + task list as the anti-drift reference, then keep it in sync.';
   }
 
   process.stdout.write(output);

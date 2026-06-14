@@ -72,7 +72,17 @@ const UNIVERSAL_RULES = [
   },
   {
     id: 'sdlc-loop',
-    text: 'SDLC LOOP: Every change moves through requirements -> research/ground-truth -> design -> architecture-critique gate (facts, not opinion) -> implementation (hold ground source before code) -> test & verify (run, show output) -> review/gates -> release. Size rigor to the task; never skip a phase.',
+    text: 'SDLC LOOP: Every change moves through requirements -> research/ground-truth -> design -> architecture-critique gate (facts, not opinion) -> implementation (hold ground source before code) -> test & verify (run, show output) -> review/gates -> release. Main agent owns the loop + gates; subagents execute single tasks. Size rigor to the task; never skip a phase.',
+    minLevel: 'solo'
+  },
+  {
+    id: 'anchor-sync',
+    text: 'ANCHOR SYNC: Keep the local CLAUDE.md anchor (goal/stack/reqs/tasks) via `/enforce-init` as anti-drift ref; re-read before acting; sync anchor tasks with native tasks on every change.',
+    minLevel: 'solo'
+  },
+  {
+    id: 'clean-codebase',
+    text: 'CLEAN CODEBASE: When editing existing code, delete superseded/dead code in the same change — no commented-out blocks, orphaned impls, or dup paths. Keep it clean.',
     minLevel: 'solo'
   },
   {
@@ -242,9 +252,15 @@ function buildContext(level, detectedDomains, pluginRoot) {
 
   let output = parts.join('\n\n');
 
-  // Hard budget cap
-  if (output.length > MAX_BUDGET) {
-    output = output.substring(0, MAX_BUDGET - 30) + '\n\n[context budget reached]';
+  // Hard budget cap — byte-accurate (multibyte chars like → and ² mean
+  // char length underestimates UTF-8 byte size, so cap on bytes).
+  const suffix = '\n\n[context budget reached]';
+  if (Buffer.byteLength(output, 'utf8') > MAX_BUDGET) {
+    let end = Math.min(output.length, MAX_BUDGET - suffix.length);
+    while (end > 0 && Buffer.byteLength(output.slice(0, end) + suffix, 'utf8') > MAX_BUDGET) {
+      end--;
+    }
+    output = output.slice(0, end) + suffix;
   }
 
   return output;
