@@ -19,3 +19,6 @@ Desktop.ini
 
 # enforce-mode runtime
 .enforce-active
+
+# Generated benchmark output (rewritten by tests/test-benchmark.js)
+docs/benchmark-results.json
