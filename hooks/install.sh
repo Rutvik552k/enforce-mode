@@ -53,6 +53,7 @@ cp "$SCRIPT_DIR/enforce-research-gate.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-test-gate.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-pre-completion.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-compress.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-level-switch.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-write-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-bash-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-stop-guard.js" "$HOOKS_DIR/"
@@ -131,6 +132,12 @@ if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-mode-tracker')) {
   settings.hooks.UserPromptSubmit.push({
     matcher: '',
     hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-mode-tracker.js', timeout: 5000 }]
+  });
+}
+if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-level-switch')) {
+  settings.hooks.UserPromptSubmit.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-level-switch.js', timeout: 5000 }]
   });
 }
 

@@ -46,6 +46,7 @@ $hookFiles = @(
     'enforce-test-gate.js',
     'enforce-pre-completion.js',
     'enforce-compress.js',
+    'enforce-level-switch.js',
     'enforce-write-guard.js',
     'enforce-bash-guard.js',
     'enforce-stop-guard.js',
@@ -113,6 +114,12 @@ if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-mode-tracker')) {
   settings.hooks.UserPromptSubmit.push({
     matcher: '',
     hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-mode-tracker.js', timeout: 5000 }]
+  });
+}
+if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-level-switch')) {
+  settings.hooks.UserPromptSubmit.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-level-switch.js', timeout: 5000 }]
   });
 }
 
