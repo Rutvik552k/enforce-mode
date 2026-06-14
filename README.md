@@ -424,5 +424,5 @@ A: Ground Truth Confidence — a 0-100 score computed from measurable signals (r
 ---
 
 <p align="center">
-  <b>v3.7.0</b> — advisory-only model (never blocks/denies), 28 tech-stack-aware department agents, 41 domains, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth guidance, dual output, zero dependencies
+  <b>v3.7.1</b> — advisory-only model (never blocks/denies), 28 tech-stack-aware department agents, 41 domains, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth guidance, dual output, zero dependencies
 </p>
