@@ -1,0 +1,48 @@
+description = "Generate/refresh the local CLAUDE.md anchor (goal + tech stack + requirements + task list) — anti-drift reference for the SDLC loop"
+prompt = """
+You are the MAIN agent. Build (or refresh) the local **CLAUDE.md anchor** for this working directory. The anchor is your anti-drift reference — you re-read it before acting so you never lose the goal or the agreed tech stack.
+
+GOAL (from the user): {{args}}
+If {{args}} is empty, ask the user for the goal in one line before continuing.
+
+Do this in order:
+
+1. **Detect the tech stack** (ground truth, not assumption). Inspect package.json / pyproject.toml / requirements.txt / go.mod / Cargo.toml / composer.json and the directory layout. Run:
+   ```
+   node -e "const {detectDomains}=require('${CLAUDE_PLUGIN_ROOT}/hooks/enforce-detect'); console.log(JSON.stringify(detectDomains(process.cwd()).slice(0,6)))"
+   ```
+   Record actual languages, frameworks, and the detected domains.
+
+2. **Capture requirements** — pull any constraints the user already stated (this session + existing CLAUDE.md). Do not invent requirements; list only what is stated or clearly implied.
+
+3. **Generate the task list** that achieves the goal, sized to the work. Each task: a short title + the owning department subagent (per the routing map) + its SDLC gate. Then create them as native tasks (TaskCreate) AND mirror them into the anchor block. The two MUST stay in sync — when a task changes, opens, or closes, update BOTH.
+
+4. **Write the anchor** into ./CLAUDE.md as a managed block delimited EXACTLY by these markers (create CLAUDE.md if absent; if it exists, append or replace ONLY the block between the markers — never clobber the user's existing content):
+
+   ```
+   <!-- enforce-anchor:start -->
+   ## Project Anchor (enforce-mode — keep in sync)
+
+   **Goal:** <one-line goal>
+
+   **Tech stack:** <languages / frameworks / datastores — detected, not assumed>
+
+   **Detected domains:** <from step 1>
+
+   **Requirements / constraints:**
+   - <stated requirement>
+
+   **Task list** (mirrors native tasks — keep both in sync):
+   - [ ] <task> — owner: <department-subagent> — gate: <test|qa|security|reliability|...>
+
+   **SDLC loop (main agent owns this — subagents are single-task executors):**
+   requirements → research/ground-truth → design → architecture-critique gate → implementation → test & verify → review/gates → release. Loop until acceptance criteria met.
+
+   **Per-task gates run before a task is marked done:** testing, QA, reliability, maintainability, sustainability, and clean-codebase (stale/dead code removed).
+
+   _Last synced: <date>_
+   <!-- enforce-anchor:end -->
+   ```
+
+5. **Confirm** to the user: the goal recorded, the detected stack, and the task list. From now on, route each task to its owning department subagent, run the SDLC loop, and keep the anchor + native tasks in sync. When you change existing code, remove the superseded/stale code so the codebase stays current and clean.
+"""

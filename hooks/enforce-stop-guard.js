@@ -60,6 +60,15 @@ const IMPORT_WRITE_PATTERNS = [
   /use\s+\w+::/,
 ];
 
+// Commented-out CODE (not prose) left behind in a write — stale-code smell.
+// Conservative: only fires on commented-out language constructs, not normal
+// explanatory comments.
+const COMMENTED_CODE_PATTERNS = [
+  /\/\/\s*(const|let|var|function|return|if|for|while|class|import|export|await|async)\b/,
+  /#\s*(def|class|return|import|from|if|for|while|print|self\.)\b/,
+  /<!--\s*(const|function|<[a-zA-Z])/,
+];
+
 const REQUIREMENTS_WRITES = [
   'requirements.txt', 'pyproject.toml', 'package.json',
   'Cargo.toml', 'go.mod', 'Gemfile', 'composer.json',
@@ -120,6 +129,8 @@ function analyzeTranscript(transcriptPath) {
     newImportsAdded: false,
     hasDSAResearch: false,
     hasComplexityComments: false,
+    hasCommentedCode: false,
+    hasEdits: false,
   };
 
   try {
@@ -141,6 +152,13 @@ function analyzeTranscript(transcriptPath) {
           if (IMPORT_WRITE_PATTERNS.some(p => p.test(line))) {
             result.hasImportWrites = true;
             result.newImportsAdded = true;
+          }
+
+          if (tool === 'Edit') result.hasEdits = true;
+
+          // Commented-out code left behind — stale-code smell
+          if (COMMENTED_CODE_PATTERNS.some(p => p.test(line))) {
+            result.hasCommentedCode = true;
           }
 
           // Check for complexity comments in written code
@@ -286,6 +304,18 @@ async function main() {
     warnings.push(
       '[RULE #4, #56-58] Multiple files changed — pre-completion analysis required.',
       'Walk changed code paths. Check for: missing imports, wrong types, edge cases, security (OWASP Top 10).'
+    );
+  }
+
+  // ── CHECK 6: CLEAN CODEBASE — stale/dead code after editing existing code ──
+  if (analysis.hasCommentedCode) {
+    warnings.push(
+      '[CLEAN CODEBASE] Commented-out code detected in this change.',
+      'Remove dead/superseded code — do not leave the replaced version commented out alongside the new one.'
+    );
+  } else if (analysis.hasEdits) {
+    warnings.push(
+      '[CLEAN CODEBASE] You edited existing code — confirm the superseded/stale code was removed (no orphaned old implementations or duplicate paths). Keep the codebase current and clean.'
     );
   }
 

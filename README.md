@@ -94,6 +94,23 @@ Or just say in chat:
 "normal mode"    # turns it off
 ```
 
+### Set the Project Anchor
+
+```
+/enforce-init "<your goal>"
+```
+
+The main agent detects your tech stack, captures requirements, generates a task
+list (native tasks + mirrored into the anchor), and writes a managed block into
+the working-directory `CLAUDE.md` (between `<!-- enforce-anchor:start/end -->`
+markers — your existing content is preserved). This anchor is the anti-drift
+reference the main agent re-reads to stay on the goal: it owns the SDLC loop and
+runs the per-task gates (testing, QA, reliability, maintainability,
+sustainability) while routing each task to the owning department subagent. When
+the goal, stack, or tasks change, the main agent keeps the anchor and the native
+task list in sync. Editing existing code removes the superseded/stale code so the
+codebase stays clean (enforced by the `CLEAN CODEBASE` rule + Stop-guard check).
+
 ### What Each Level Does
 
 | Level | Best For | What It Checks |

@@ -1,5 +1,7 @@
 description = "Switch enforcement level (solo/team/prod/off) or uninstall — persists across sessions"
 prompt = """
+If the argument starts with "init", do NOT switch levels. Tell the user to use the dedicated command `/enforce-init "<goal>"` to generate the local CLAUDE.md anchor (goal + tech stack + requirements + task list), then stop.
+
 If the argument is "uninstall", run the cleanup script:
 ```
 node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-uninstall.js
