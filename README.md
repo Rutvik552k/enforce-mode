@@ -259,11 +259,15 @@ clear escape — search the flagged symbol. Once captured, it grounds and the ch
 
 ---
 
-## Department Agents (v3.5)
+## Department Agents (v3.6)
 
-enforce-mode ships **19 department subagents** that realize the `CLAUDE.md` Rule 2
+enforce-mode ships **28 department subagents** that realize the `CLAUDE.md` Rule 2
 routing map out of the box. Install the plugin and the whole team is available as
 `enforce-mode:<agent>` — no per-project authoring required.
+
+Every agent carries an explicit **tech stack** and **engineering-method + efficiency**
+section so it knows the concrete tools of its trade and how to use them well — not just
+the principles.
 
 Every agent is built with the same enforce-mode contract baked into its system
 prompt:
@@ -281,6 +285,15 @@ prompt:
 |---|---|
 | Architecture / contracts | `solution-architect` |
 | Algorithms / performance (complexity targets) | `research-solution-architect` |
+| Server-side services / APIs / business logic | `backend-engineer` |
+| Web UI (React/TS) / accessibility / perf | `frontend-engineer` |
+| End-to-end vertical slices (API→UI) | `fullstack-engineer` |
+| Shared UI components / design tokens | `design-system-engineer` |
+| User flows / IA / prototypes (unhappy paths) | `ux-flow-designer` |
+| Data tier — schema / indexing / migrations | `database-engineer` |
+| Mobile apps (iOS/Android/RN/Flutter) | `mobile-engineer` |
+| LLM app layer — RAG / agents / eval / safety | `ai-application-engineer` |
+| Smart contracts / on-chain (Solidity) | `blockchain-engineer` |
 | Vision / steganalysis modeling | `computer-vision-engineer` |
 | ML training & serving | `ml-engineer` |
 | Data pipelines / datasets / leakage | `data-engineer` |
@@ -409,5 +422,5 @@ A: Ground Truth Confidence — a 0-100 score computed from measurable signals (r
 ---
 
 <p align="center">
-  <b>v3.4.0</b> — 41 domains, 451 tests, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth enforcement, dual output, zero dependencies
+  <b>v3.6.0</b> — 28 tech-stack-aware department agents, 41 domains, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth enforcement, dual output, zero dependencies
 </p>

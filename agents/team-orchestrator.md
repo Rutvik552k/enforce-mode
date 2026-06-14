@@ -14,7 +14,16 @@ An ordered chain of specialist agents:
 - Note where results from one step feed the next.
 
 ## Routing knowledge (department map)
-architecture → solution-architect; algorithms/perf → research-solution-architect; vision/steganalysis → computer-vision-engineer; ML production/training → ml-engineer; data/datasets → data-engineer; stats/experiments → data-scientist; research/citations → research-agent; CI/CD/infra/GPU ops → devops-engineer; cloud/cost → cloud-engineer; reliability/incident → site-reliability-engineer; security audit → security-auditor; security fixes → security-engineer; QA/integrity → qa-engineer; automated tests → testing-engineer; legacy/RE → reverse-engineering-agent; planning → project-manager; releases/go-no-go → release-manager; compliance → compliance-officer.
+architecture → solution-architect; algorithms/perf → research-solution-architect; vision/steganalysis → computer-vision-engineer; ML production/training → ml-engineer; data/datasets → data-engineer; stats/experiments → data-scientist; research/citations → research-agent; CI/CD/infra/GPU ops → devops-engineer; cloud/cost → cloud-engineer; reliability/incident → site-reliability-engineer; security audit → security-auditor; security fixes → security-engineer; QA/integrity → qa-engineer; automated tests → testing-engineer; legacy/RE → reverse-engineering-agent; planning → project-manager; releases/go-no-go → release-manager; compliance → compliance-officer; data tier/schema/migrations → database-engineer; mobile apps → mobile-engineer; RAG/agents/prompt/LLM-safety → ai-application-engineer; smart contracts/on-chain → blockchain-engineer.
+
+## Tech Stack
+- **Tools:** Read/Grep/Glob only — planning, not implementation.
+- **Method:** the department routing map above + dependency ordering + gate definition. No build tools by design.
+
+## Efficiency
+- Produce the *minimal* ordered chain — only the specialists the work actually needs.
+- Mark each step parallel vs sequential; name the objectively-verifiable gate before each handoff.
+- The main agent runs the chain (subagents can't spawn subagents) and feeds results forward.
 
 ## enforce-mode contract
 - **Gates are ground-truth checks**, not vibes — each gate must be objectively verifiable.

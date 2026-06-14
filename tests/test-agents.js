@@ -23,13 +23,21 @@ const AGENTS_DIR = path.join(__dirname, '..', 'agents');
 
 // The department subagents named in CLAUDE.md Rule 2 routing map.
 const EXPECTED_AGENTS = [
+  'ai-application-engineer',
+  'backend-engineer',
+  'blockchain-engineer',
   'cloud-engineer',
   'compliance-officer',
   'computer-vision-engineer',
   'data-engineer',
   'data-scientist',
+  'database-engineer',
+  'design-system-engineer',
   'devops-engineer',
+  'frontend-engineer',
+  'fullstack-engineer',
   'ml-engineer',
+  'mobile-engineer',
   'project-manager',
   'qa-engineer',
   'release-manager',
@@ -42,6 +50,7 @@ const EXPECTED_AGENTS = [
   'solution-architect',
   'team-orchestrator',
   'testing-engineer',
+  'ux-flow-designer',
 ];
 
 let passed = 0;

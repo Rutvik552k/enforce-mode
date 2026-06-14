@@ -84,6 +84,10 @@ ground truth**, for the department it owns.
 | Understanding legacy/undocumented code, reverse-eng | `reverse-engineering-agent` |
 | Delivery planning, milestones, dependencies, risk | `project-manager` |
 | Release gates, changelog, versioning, go/no-go | `release-manager` |
+| Data tier — schema, indexing, query tuning, migrations, replication, backups | `database-engineer` |
+| Mobile apps (iOS/Android/React Native/Flutter), on-device perf/storage | `mobile-engineer` |
+| LLM application layer — RAG, agents/tool-use, prompt/eval, LLM safety | `ai-application-engineer` |
+| Smart contracts / on-chain systems (Solidity), contract security, audits | `blockchain-engineer` |
 
 When a query does not clearly map to a department, the main agent picks the
 closest-fit department and states why, or asks the user to disambiguate.
