@@ -17,7 +17,43 @@ Universal engineering rules:
 Operating model (always on, every conversation):
 - Department routing: triage each task to the owning department subagent instead of doing specialist work in the main agent; specialists return a POV backed by ground truth. Cross-department work goes to team-orchestrator first for the ordered chain + gates, then run each specialist in turn.
 - Subagents run in background — launch with background execution; never sit idle waiting on one.
+- Main agent frees after assigning: once a task is dispatched to a subagent, the main agent MUST NOT block on it. Hand off the task, immediately continue productive work (triage/dispatch other tasks, status, monitoring), and act on each subagent's result only when its completion notification fires. Dispatching a subagent and then waiting for it is a violation.
 - SDLC loop: every change flows requirements → research/ground-truth → design → architecture-critique gate (facts, not opinion) → implementation (hold ground source before code) → test & verify (run, show output) → review/gates → release. Size rigor to the task; never skip a phase.
+
+Department → subagent routing map:
+
+| Department / concern | Subagent |
+|---|---|
+| Orchestration of multi-department work | `team-orchestrator` |
+| Architecture, service boundaries, ADRs, build-vs-buy | `solution-architect` |
+| Hard algorithm/data-structure design, perf/scale-critical, research-to-production | `research-solution-architect` |
+| Server-side services, APIs, business logic, queues | `backend-engineer` |
+| Web UI (React/TS), accessibility, state, perf | `frontend-engineer` |
+| End-to-end vertical slices (API→UI), MVPs, prototypes | `fullstack-engineer` |
+| Shared UI components, design tokens, primitives | `design-system-engineer` |
+| User flows, IA, prototypes, unhappy-path UX | `ux-flow-designer` |
+| Cloud architecture, k8s, multi-region, cost | `cloud-engineer` |
+| CI/CD, IaC, container build/deploy, env parity | `devops-engineer` |
+| Reliability, SLOs, observability, incident response | `site-reliability-engineer` |
+| Adversarial security review (read-only) | `security-auditor` |
+| Security hardening, threat modeling, fixes | `security-engineer` |
+| Regulatory/compliance gap review (read-only) | `compliance-officer` |
+| Functional/exploratory/release QA testing | `qa-engineer` |
+| Automated test suites (unit/integration/e2e/load) | `testing-engineer` |
+| Computer-vision systems and pipelines | `computer-vision-engineer` |
+| Productionizing models, training pipelines, eval gates, serving | `ml-engineer` |
+| Data pipelines, ETL, schema/quality validation, leakage checks | `data-engineer` |
+| Experiment design, metrics, statistical analysis, A/B readouts | `data-scientist` |
+| Sourced research, prior-art, feasibility, dossiers | `research-agent` |
+| Understanding legacy/undocumented code, reverse-eng | `reverse-engineering-agent` |
+| Delivery planning, milestones, dependencies, risk | `project-manager` |
+| Release gates, changelog, versioning, go/no-go | `release-manager` |
+| Data tier — schema, indexing, query tuning, migrations, replication, backups | `database-engineer` |
+| Mobile apps (iOS/Android/RN/Flutter), on-device perf/storage | `mobile-engineer` |
+| LLM application layer — RAG, agents/tool-use, prompt/eval, LLM safety | `ai-application-engineer` |
+| Smart contracts / on-chain systems (Solidity), contract security, audits | `blockchain-engineer` |
+
+When a query does not clearly map to a department, the main agent picks the closest-fit department and states why, or asks the user to disambiguate.
 
 Living project docs (always keep current):
 - CLAUDE.md, architecture.md, and progress.md live in the project root. Re-read them before acting; if any is missing, ask the user before creating it.

@@ -13,6 +13,8 @@
 const APPEND_TEXT = [
   'Always follow the rules mentioned in universal.md from enforce plugin',
   'If you encounter any ambiguous query and need more data, ask the user before processing.',
+  'Route each task to its owning department subagent (see the universal.md routing map); do not do specialist work in the main agent.',
+  'After assigning a task to a subagent, the main agent must not block on it — dispatch in background, continue productive work, and act on its result when the completion notification fires.',
 ].join('\n');
 
 function readStdin() {
