@@ -10,7 +10,10 @@
 'use strict';
 
 // The exact text appended to every user query.
-const APPEND_TEXT = 'Always follow the rules mentioned in universal.md from enforce plugin';
+const APPEND_TEXT = [
+  'Always follow the rules mentioned in universal.md from enforce plugin',
+  'If you encounter any ambiguous query and need more data, ask the user before processing.',
+].join('\n');
 
 function readStdin() {
   return new Promise((resolve) => {
