@@ -57,6 +57,8 @@ cp "$SCRIPT_DIR/enforce-level-switch.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-write-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-bash-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-stop-guard.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-project-docs.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-prompt-append.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-uninstall.js" "$HOOKS_DIR/"
 chmod +x "$HOOKS_DIR/enforce-statusline.sh" 2>/dev/null || true
 chmod +x "$HOOKS_DIR/enforce-write-guard.js" 2>/dev/null || true
@@ -65,7 +67,7 @@ chmod +x "$HOOKS_DIR/enforce-stop-guard.js" 2>/dev/null || true
 
 # Copy rules directory
 mkdir -p "$CLAUDE_DIR/rules/domains"
-cp "$SCRIPT_DIR/../rules/CLAUDE.md" "$CLAUDE_DIR/rules/"
+cp "$SCRIPT_DIR/../rules/universal.md" "$CLAUDE_DIR/rules/"
 cp "$SCRIPT_DIR/../rules/domains/"*.md "$CLAUDE_DIR/rules/domains/"
 
 # Record exactly which domain rule files we copied — lets uninstall remove the
@@ -125,6 +127,12 @@ if (!hookExists(settings.hooks.SessionStart, 'enforce-activate')) {
     hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-activate.js', timeout: 10000 }]
   });
 }
+if (!hookExists(settings.hooks.SessionStart, 'enforce-project-docs')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-project-docs.js', timeout: 10000 }]
+  });
+}
 
 // UserPromptSubmit
 if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
@@ -138,6 +146,12 @@ if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-level-switch')) {
   settings.hooks.UserPromptSubmit.push({
     matcher: '',
     hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-level-switch.js', timeout: 5000 }]
+  });
+}
+if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-prompt-append')) {
+  settings.hooks.UserPromptSubmit.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-prompt-append.js', timeout: 5000 }]
   });
 }
 

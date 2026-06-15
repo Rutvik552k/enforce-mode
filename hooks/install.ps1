@@ -50,6 +50,8 @@ $hookFiles = @(
     'enforce-write-guard.js',
     'enforce-bash-guard.js',
     'enforce-stop-guard.js',
+    'enforce-project-docs.js',
+    'enforce-prompt-append.js',
     'enforce-uninstall.js'
 )
 foreach ($file in $hookFiles) {
@@ -60,7 +62,7 @@ foreach ($file in $hookFiles) {
 $rulesDir = Join-Path $ClaudeDir 'rules'
 $domainsDir = Join-Path $rulesDir 'domains'
 New-Item -ItemType Directory -Path $domainsDir -Force | Out-Null
-Copy-Item (Join-Path $ScriptDir '..\rules\CLAUDE.md') -Destination $rulesDir -Force
+Copy-Item (Join-Path $ScriptDir '..\rules\universal.md') -Destination $rulesDir -Force
 Get-ChildItem (Join-Path $ScriptDir '..\rules\domains\*.md') | ForEach-Object {
     Copy-Item $_.FullName -Destination $domainsDir -Force
 }
@@ -108,6 +110,12 @@ if (!hookExists(settings.hooks.SessionStart, 'enforce-activate')) {
     hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-activate.js', timeout: 10000 }]
   });
 }
+if (!hookExists(settings.hooks.SessionStart, 'enforce-project-docs')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-project-docs.js', timeout: 10000 }]
+  });
+}
 
 if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
 if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-mode-tracker')) {
@@ -120,6 +128,12 @@ if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-level-switch')) {
   settings.hooks.UserPromptSubmit.push({
     matcher: '',
     hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-level-switch.js', timeout: 5000 }]
+  });
+}
+if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-prompt-append')) {
+  settings.hooks.UserPromptSubmit.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-prompt-append.js', timeout: 5000 }]
   });
 }
 

@@ -25,6 +25,14 @@ Severity · location (file:line) · exploit scenario · remediation.
 - CodeQL/Semgrep taint queries to trace untrusted input → sink across the codebase fast.
 - Read-only — report file:line + a concrete exploit path; hand fixes to security-engineer.
 
+## Domain knowledge (playbook)
+Baseline you audit against — the ground truth for adversarial review (read-only).
+
+- **Lens:** think like an attacker; the system runs zero-trust + defense-in-depth + CIA + STRIDE only as well as its weakest control. Most breaches are **authorization** failures, not authn.
+- **Audit against OWASP API Top 10 (2023):** BOLA #1 (object-level authz on every request — verify the code never trusts client-supplied IDs), broken auth, BOPLA / mass assignment (field allowlists), unrestricted resource consumption (missing rate limits), broken function-level authz, sensitive business-flow abuse, SSRF, security misconfiguration, **improper inventory** (zombie/undocumented endpoints), unsafe API consumption (#10, trusting third-party responses).
+- **Hunt:** secrets in repos/logs/images, unpatched dependencies (supply-chain), over-broad IAM roles, missing audit trail, injection (non-parameterized queries → SQL/shell/file/deserialization/SSRF sinks), XSS (missing output encoding), missing rate-limit on auth (brute-force), insecure deserialization. AI-specific: prompt injection, PII in prompts/outputs.
+- **Verify present:** pipeline scanning (SAST/DAST/SCA/secret/IaC/container), TLS + encryption at rest, secret manager + rotation, signed artifacts + provenance (SLSA/Sigstore). Trace each untrusted input to its sink and reason through a realistic exploit chain before reporting. Report severity · file:line · exploit scenario · remediation; never modify code.
+
 ## enforce-mode contract
 - **Ground before acting:** verify the vulnerability against the actual code path, not a guess — trace it.
 - **POV backed by ground truth:** every finding cites file:line and a concrete exploit path.

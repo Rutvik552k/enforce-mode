@@ -29,23 +29,24 @@ Default: **solo**. Switch: `/enforce solo|team|prod`.
 
 ## Universal Rules (all levels)
 
-1. **Research before code**: Web-search to verify APIs, function signatures, and library versions before implementing. Architecture-first — understand before coding.
+1. **Research / ground truth before code**: Web-search to verify APIs, function signatures, library/model versions, and patterns against current docs/source before implementing (including external libraries). Architecture-first — understand before coding. Flag UNVERIFIED if unconfirmed.
 2. **Git discipline**: NEVER commit without asking user first. NEVER push broken or untested code. Check for secrets before staging.
 3. **Test before ship**: Every code change must be tested on actual hardware. "It should work" is NOT a valid test result — run it and show output.
 4. **Pre-completion analysis**: Before marking ANY task complete — walk every changed code path, check for missing imports/wrong types/edge cases, run security review.
-5. **Web-research mandate**: Before implementing external APIs or unfamiliar libraries, verify current docs and function signatures via web-search.
-6. **Verify before recommend**: Never change an agreed-upon decision without asking first. If a dependency is unavailable, STOP and present alternatives.
+5. **Verify before recommend**: Never change an agreed-upon decision without asking first. If a dependency is unavailable, STOP and present alternatives.
 
 ## Team-Level Additions
 
-7. **Session documentation**: Update session log with decisions, models verified, issues found, test results, cost estimates.
-8. **Parallel execution**: Long-running tasks MUST use background subagents. ALL inference/generation → background, ZERO exceptions. Main agent NEVER idles.
-9. **Requirements sync**: Keep dependency files in sync with all imports.
+6. **Session documentation**: Update session log with decisions, models verified, issues found, test results, cost estimates.
+7. **Parallel execution**: Long-running tasks MUST use background subagents. ALL inference/generation → background, ZERO exceptions. Main agent NEVER idles.
+8. **Requirements sync**: Keep dependency files in sync with all imports.
+9. **Living docs**: Keep CLAUDE.md, architecture.md, and progress.md current; ask before creating a missing one. progress.md splits Open/Closed tasks; architecture.md tracks stack + workflow. Updating docs is part of "done."
+10. **Brainstorm + ground truth**: Weigh realistic options, then commit to one — every option and the choice backed by verified ground truth, never opinion. Subagents raise ground-truth-backed concerns to the main agent, which decides escalate-to-user vs resolve-in-loop.
 
 ## Prod-Level Additions
 
-10. **DSA efficiency**: State Big-O + wall-clock estimates. Calculate memory budgets. Design for streaming. Track P99, not averages.
-11. **Full security**: Auth on all endpoints, rate limiting, input validation, file upload protection, prompt injection defense, secrets management, DDoS protection.
+11. **DSA efficiency**: State Big-O + wall-clock estimates. Calculate memory budgets. Design for streaming. Track P99, not averages.
+12. **Full security**: Auth on all endpoints, rate limiting, input validation, file upload protection, prompt injection defense, secrets management, DDoS protection.
 
 ## Domain Detection
 
