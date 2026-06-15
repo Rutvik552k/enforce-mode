@@ -37,7 +37,7 @@ const SEVERITY_MIN_LEVEL = {
 const UNIVERSAL_RULES = [
   {
     id: 'research-before-code',
-    text: 'RESEARCH BEFORE CODE: Web-search verify APIs, signatures, lib versions before implementing. Architecture-first. Never recommend without web-search verification.',
+    text: 'RESEARCH BEFORE CODE: Web-search verify APIs, signatures, lib/model versions, and patterns against current docs/source before implementing (incl. external libraries). Architecture-first. Flag "UNVERIFIED" if unconfirmed. Never recommend without verification.',
     minLevel: 'solo'
   },
   {
@@ -53,11 +53,6 @@ const UNIVERSAL_RULES = [
   {
     id: 'pre-completion',
     text: 'PRE-COMPLETION ANALYSIS: Before marking task complete — walk every changed code path, check missing imports/wrong types/edge cases, OWASP Top 10 on code touching user input/APIs. Fix before done.',
-    minLevel: 'solo'
-  },
-  {
-    id: 'web-research',
-    text: 'WEB-RESEARCH MANDATE: Before implementing external library/model, web-search current docs, verify signatures against source, flag "UNVERIFIED" if unconfirmed.',
     minLevel: 'solo'
   },
   {
@@ -84,6 +79,16 @@ const UNIVERSAL_RULES = [
     id: 'clean-codebase',
     text: 'CLEAN CODEBASE: When editing existing code, delete superseded/dead code in the same change — no commented-out blocks, orphaned impls, or dup paths. Keep it clean.',
     minLevel: 'solo'
+  },
+  {
+    id: 'living-docs',
+    text: 'LIVING DOCS: Keep CLAUDE.md, architecture.md, progress.md current; re-read before acting, ask before creating a missing one. progress.md = `## Open Tasks`/`## Closed Tasks` (Closed only when verified). architecture.md = stack + workflow, updated with any stack/deps/data-flow change. Docs are part of "done."',
+    minLevel: 'team'
+  },
+  {
+    id: 'brainstorm-ground',
+    text: 'BRAINSTORM + GROUND TRUTH: Weigh realistic options then commit to one, every option + choice backed by verified ground truth (doc/source/benchmark/test), never opinion. Subagents may raise concerns only when ground-truth-backed; they report to the main agent, which decides escalate-to-user vs resolve-in-loop. Never drop a grounded concern.',
+    minLevel: 'team'
   },
   {
     id: 'session-documentation',
