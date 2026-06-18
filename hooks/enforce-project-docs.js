@@ -59,7 +59,7 @@ async function main() {
     '\n\n## Project Docs (missing)\n' +
     `enforce-mode keeps CLAUDE.md, architecture.md, and progress.md current. ` +
     `Missing in this project: ${list}. ` +
-    `ASK the user for permission before creating ${names}; do not create them silently. ` +
+    `ASK the user for permission before creating ${names} via the AskUserQuestion tool (structured options, e.g. create / skip), not a free-text prompt; do not create them silently. ` +
     `On approval: progress.md → \`## Open Tasks\` / \`## Closed Tasks\`; ` +
     `architecture.md → tech stack + workflow. Keep them in sync thereafter.`;
 

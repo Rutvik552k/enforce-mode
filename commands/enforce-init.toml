@@ -3,7 +3,7 @@ prompt = """
 You are the MAIN agent. Build (or refresh) the local **CLAUDE.md anchor** for this working directory. The anchor is your anti-drift reference — you re-read it before acting so you never lose the goal or the agreed tech stack.
 
 GOAL (from the user): {{args}}
-If {{args}} is empty, ask the user for the goal in one line before continuing.
+If {{args}} is empty, ask the user for the goal via the AskUserQuestion tool (structured options) before continuing.
 
 Do this in order:
 
@@ -38,7 +38,7 @@ Do this in order:
    **SDLC loop (inner, per task — main agent owns this, subagents are single-task executors):**
    requirements → research/ground-truth → design → architecture-critique gate → implementation → test & verify → review/gates → release. Loop until acceptance criteria met.
 
-   **Task loop (outer, wraps the SDLC loop):** once architecture is finalized, the task list above is generated from it (DAG, no dependency cycles) and approved by the user; the main agent then works each Open task through the SDLC loop, routing cross-department tasks via team-orchestrator and dispatching independent steps to subagents in background (concurrency-capped), retrying a failed gate at most 3 times before escalating to the user, moves the task to Closed only when verified, and continues to the next — pausing to ask the user on any decision. Loops until no Open tasks remain.
+   **Task loop (outer, wraps the SDLC loop):** once architecture is finalized, the task list above is generated from it (DAG, no dependency cycles) and approved by the user; the main agent then works each Open task through the SDLC loop, routing cross-department tasks via team-orchestrator and dispatching independent steps to subagents in background (concurrency-capped), retrying a failed gate at most 3 times before escalating to the user, moves the task to Closed only when verified, and continues to the next — pausing to ask the user on any decision via the AskUserQuestion tool with concrete options (option cards), not a free-text question. Loops until no Open tasks remain.
 
    **Per-task gates run before a task is marked done:** testing, QA, reliability, maintainability, sustainability, and clean-codebase (stale/dead code removed).
 
