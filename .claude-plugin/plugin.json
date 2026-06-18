@@ -1,7 +1,7 @@
 {
   "name": "enforce-mode",
   "description": "Always-on universal engineering rules + project-aware domain rules with PECK v3 level-aware advisory guidance (never blocks or denies — every check approves and injects context) and a Grounded-Generation Layer that traces every external API call back to a researched source (UNVERIFIED flag when it can't), reducing hallucination. Detects 41 domains across 12 lifecycle phases via weighted signal scoring. Modular pattern architecture with per-pattern severity (WARN/STRICT/CRITICAL) mapped to levels (solo/team/prod). Ships 28 tech-stack-aware department subagents (ground-truth-backed, research-before-code) that realize the CLAUDE.md routing map out of the box.",
-  "version": "3.10.0",
+  "version": "3.11.0",
   "author": {
     "name": "Rutvik552k",
     "url": "https://github.com/Rutvik552k"

@@ -15,7 +15,7 @@ Do this in order:
 
 2. **Capture requirements** — pull any constraints the user already stated (this session + existing CLAUDE.md). Do not invent requirements; list only what is stated or clearly implied.
 
-3. **Generate the task list** that achieves the goal, sized to the work. Each task: a short title + the owning department subagent (per the routing map) + its SDLC gate. Then create them as native tasks (TaskCreate) AND mirror them into the anchor block. The two MUST stay in sync — when a task changes, opens, or closes, update BOTH.
+3. **Generate the task list** that achieves the goal, sized to the work — derived from the finalized architecture. Build a task DAG and reject dependency cycles (topo-sort into parallel batches so independent tasks can dispatch concurrently). Each task: a short title + the owning department subagent (per the routing map) + its SDLC gate. Then create them as native tasks (TaskCreate) AND mirror them into the anchor block + progress.md `## Open Tasks`. The three MUST stay in sync — when a task changes, opens, or closes, update all. **PAUSE here and present the task list for user approval before working any task** (outer task-loop trigger).
 
 4. **Write the anchor** into ./CLAUDE.md as a managed block delimited EXACTLY by these markers (create CLAUDE.md if absent; if it exists, append or replace ONLY the block between the markers — never clobber the user's existing content):
 
@@ -35,8 +35,10 @@ Do this in order:
    **Task list** (mirrors native tasks — keep both in sync):
    - [ ] <task> — owner: <department-subagent> — gate: <test|qa|security|reliability|...>
 
-   **SDLC loop (main agent owns this — subagents are single-task executors):**
+   **SDLC loop (inner, per task — main agent owns this, subagents are single-task executors):**
    requirements → research/ground-truth → design → architecture-critique gate → implementation → test & verify → review/gates → release. Loop until acceptance criteria met.
+
+   **Task loop (outer, wraps the SDLC loop):** once architecture is finalized, the task list above is generated from it (DAG, no dependency cycles) and approved by the user; the main agent then works each Open task through the SDLC loop, routing cross-department tasks via team-orchestrator and dispatching independent steps to subagents in background (concurrency-capped), retrying a failed gate at most 3 times before escalating to the user, moves the task to Closed only when verified, and continues to the next — pausing to ask the user on any decision. Loops until no Open tasks remain.
 
    **Per-task gates run before a task is marked done:** testing, QA, reliability, maintainability, sustainability, and clean-codebase (stale/dead code removed).
 

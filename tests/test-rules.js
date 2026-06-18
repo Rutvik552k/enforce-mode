@@ -177,12 +177,24 @@ test('solo context includes routing, SDLC, anchor-sync, clean-codebase rules', (
   assert.ok(output.includes('CLEAN CODEBASE'), 'missing clean-codebase rule');
 });
 
+// Task loop is team-level: absent at solo (keeps solo footprint minimal), present at team+
+test('TASK LOOP is team-level — excluded at solo, included at team', () => {
+  assert.ok(!buildContext('solo', [], pluginRoot).includes('TASK LOOP'), 'task-loop should not load at solo');
+  assert.ok(buildContext('team', [], pluginRoot).includes('TASK LOOP'), 'task-loop should load at team');
+});
+
 test('anchor-sync and clean-codebase are solo-level (always on)', () => {
   for (const id of ['anchor-sync', 'clean-codebase']) {
     const rule = UNIVERSAL_RULES.find(r => r.id === id);
     assert.ok(rule, id + ' rule missing from registry');
     assert.strictEqual(rule.minLevel, 'solo', id + ' should be solo-level');
   }
+});
+
+test('task-loop is team-level', () => {
+  const rule = UNIVERSAL_RULES.find(r => r.id === 'task-loop');
+  assert.ok(rule, 'task-loop rule missing from registry');
+  assert.strictEqual(rule.minLevel, 'team', 'task-loop should be team-level');
 });
 
 test('byte budget honored at prod with 5 domains', () => {
