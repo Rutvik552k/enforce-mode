@@ -106,7 +106,18 @@ the working-directory `CLAUDE.md` (between `<!-- enforce-anchor:start/end -->`
 markers — your existing content is preserved). This anchor is the anti-drift
 reference the main agent re-reads to stay on the goal: it owns the SDLC loop and
 runs the per-task gates (testing, QA, reliability, maintainability,
-sustainability) while routing each task to the owning department subagent. When
+sustainability) while routing each task to the owning department subagent.
+
+The anchor also drives the **outer task loop**: once `architecture.md` is
+finalized, the task list is auto-generated from it (as a dependency DAG with
+cycles rejected) into `progress.md` and paused for your approval. On approval,
+the main agent works each Open task through the inner SDLC loop (routing
+cross-department tasks via `team-orchestrator` and dispatching independent steps
+to subagents in background, concurrency-capped; a failed gate retries at most 3
+times before escalating to you), closes it only when verified, and continues to
+the next — stopping to ask you on any decision — until no Open tasks remain.
+These bounds (acyclic task DAG, capped dispatch, bounded gate-retry) keep the
+loop free of deadlock and gate-cycle livelock. When
 the goal, stack, or tasks change, the main agent keeps the anchor and the native
 task list in sync. Editing existing code removes the superseded/stale code so the
 codebase stays clean (enforced by the `CLEAN CODEBASE` rule + Stop-guard check).
