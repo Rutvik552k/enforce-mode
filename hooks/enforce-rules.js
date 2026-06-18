@@ -71,11 +71,6 @@ const UNIVERSAL_RULES = [
     minLevel: 'solo'
   },
   {
-    id: 'task-loop',
-    text: 'TASK LOOP (outer): Once architecture.md is finalized, auto-generate the task list from it — build a task DAG, reject dependency cycles, topo-sort into parallel batches — into progress.md `## Open Tasks`, then PAUSE for user approval before working. On approval, drive each Open task through the inner SDLC loop; cross-department tasks go to team-orchestrator first for the ordered chain + parallel/sequential marks + gates, then dispatch independent steps to department subagents in background — never idle, cap concurrent in-flight dispatch and queue the rest. Inner-loop gate failures retry bounded (max 3) then STOP and escalate to the user via the AskUserQuestion tool (structured options + the failing evidence), not a free-text prompt. Move a task to `## Closed Tasks` only when verified (tests run, output shown), then pick up the next. Whenever a task needs a decision the user owns (scope, trade-off, ambiguity, grounded concern), STOP and ask the user via the AskUserQuestion tool with concrete options (option cards), never a free-text question. Repeat until no Open tasks remain.',
-    minLevel: 'team'
-  },
-  {
     id: 'anchor-sync',
     text: 'ANCHOR SYNC: Keep the local CLAUDE.md anchor (goal/stack/reqs/tasks) via `/enforce-init` as anti-drift ref; re-read before acting; sync anchor tasks with native tasks on every change.',
     minLevel: 'solo'

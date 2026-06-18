@@ -177,10 +177,12 @@ test('solo context includes routing, SDLC, anchor-sync, clean-codebase rules', (
   assert.ok(output.includes('CLEAN CODEBASE'), 'missing clean-codebase rule');
 });
 
-// Task loop is team-level: absent at solo (keeps solo footprint minimal), present at team+
-test('TASK LOOP is team-level — excluded at solo, included at team', () => {
-  assert.ok(!buildContext('solo', [], pluginRoot).includes('TASK LOOP'), 'task-loop should not load at solo');
-  assert.ok(buildContext('team', [], pluginRoot).includes('TASK LOOP'), 'task-loop should load at team');
+// Outer task loop moved to the always-on prompt-append channel; no longer a SessionStart rule.
+test('TASK LOOP is absent from SessionStart rules at every level', () => {
+  assert.ok(!UNIVERSAL_RULES.find(r => r.id === 'task-loop'), 'task-loop rule should be removed from registry');
+  for (const level of ['solo', 'team', 'prod']) {
+    assert.ok(!buildContext(level, [], pluginRoot).includes('TASK LOOP'), `task-loop should not load at ${level}`);
+  }
 });
 
 test('anchor-sync and clean-codebase are solo-level (always on)', () => {
@@ -189,12 +191,6 @@ test('anchor-sync and clean-codebase are solo-level (always on)', () => {
     assert.ok(rule, id + ' rule missing from registry');
     assert.strictEqual(rule.minLevel, 'solo', id + ' should be solo-level');
   }
-});
-
-test('task-loop is team-level', () => {
-  const rule = UNIVERSAL_RULES.find(r => r.id === 'task-loop');
-  assert.ok(rule, 'task-loop rule missing from registry');
-  assert.strictEqual(rule.minLevel, 'team', 'task-loop should be team-level');
 });
 
 test('byte budget honored at prod with 5 domains', () => {
