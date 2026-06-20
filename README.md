@@ -12,27 +12,26 @@
 
 **Automatic quality rules for Claude Code.** Like a spell-checker, but for engineering best practices.
 
-When you use Claude Code to write software, enforce-mode watches in the background and makes sure Claude follows good engineering habits — researching before coding, testing before shipping, never committing secrets, and following security best practices.
+When you use Claude Code to write software, enforce-mode runs quietly in the background and nudges Claude toward good engineering habits — researching before coding, testing before shipping, never committing secrets, and following security best practices for your project type.
 
-> Think of it as a safety net that catches mistakes before they happen.
+> Think of it as a safety net that reminds Claude of the right thing to do at the right moment.
 
 ---
 
 ## What Does It Do?
 
 Without enforce-mode, Claude Code might:
-- Write code without checking if libraries are up to date
+- Write code without checking whether a library is up to date
 - Skip tests and say "it should work"
-- Accidentally commit API keys or passwords
-- Ignore security best practices
+- Accidentally commit an API key or password
+- Miss security best practices
 
 **With enforce-mode**, Claude is guided to:
-- Research APIs before using them (per-library ground truth verification)
-- Run tests and show results
-- Never commit secrets
-- Follow security patterns for your project type
-- Load relevant skills before writing code
-- Meet a Ground Truth Confidence (GTC) score threshold every response
+- Research an API before using it
+- Run tests and show the output
+- Keep secrets out of commits
+- Follow security patterns matched to your project type
+- Earn a Ground Truth Confidence (GTC) score on every response
 
 <p align="center">
   <img src="images/before-after.png" alt="Before and after enforce-mode" width="100%"/>
@@ -42,15 +41,29 @@ Without enforce-mode, Claude Code might:
 
 ## Installation
 
-### Option 1: Plugin Install (Recommended)
+enforce-mode installs as a Claude Code **plugin**. Pick one of the two options below.
 
-```bash
-claude plugin install enforce-mode
+### Option 1 — Plugin install (recommended)
+
+Run these two commands inside Claude Code:
+
+```
+/plugin marketplace add Rutvik552k/enforce-mode
+/plugin install enforce-mode@enforce-mode
 ```
 
-That's it. It activates automatically on every session.
+The first command tells Claude Code where to find the plugin (this GitHub repo).
+The second installs it. After that it activates automatically on every session —
+no further setup.
 
-### Option 2: Manual Install
+> **Keep it up to date:** open `/plugin` → **Marketplaces** tab → select
+> **enforce-mode** → enable **auto-update**.
+
+### Option 2 — Manual install (no plugin system)
+
+Use this if you prefer to wire the hooks into your `~/.claude/settings.json`
+directly. You only need **Node.js** installed (the hooks are plain Node, zero
+dependencies).
 
 **Mac / Linux:**
 ```bash
@@ -59,19 +72,20 @@ cd enforce-mode
 bash hooks/install.sh
 ```
 
-**Windows:**
+**Windows (PowerShell):**
 ```powershell
 git clone https://github.com/Rutvik552k/enforce-mode.git
 cd enforce-mode
 powershell -ExecutionPolicy Bypass -File hooks\install.ps1
 ```
 
-### Auto-Updates
+The installer copies the hook scripts to `~/.claude/hooks/`, the rules to
+`~/.claude/rules/`, and registers everything in `~/.claude/settings.json`. It is
+**idempotent** — safe to run again — and backs up your existing `settings.json`
+before changing it. Re-run with `--force` to reinstall.
 
-Enable auto-updates so you always have the latest version:
-```
-/plugin → Marketplaces tab → select enforce-mode → Enable auto-update
-```
+To remove a manual install later, run `/enforce-uninstall` (or
+`node hooks/enforce-uninstall.js`), which removes only what the installer added.
 
 ---
 
@@ -79,255 +93,129 @@ Enable auto-updates so you always have the latest version:
 
 Once installed, enforce-mode runs automatically. No configuration needed.
 
-### Switch Enforcement Level
+### Switch enforcement level
 
 ```
-/enforce solo    # Light rules — for solo prototyping
-/enforce team    # Stricter — for team projects
-/enforce prod    # Full security stack — for production code
-/enforce off     # Turn off
+/enforce solo    # Light rules — solo prototyping
+/enforce team    # Stricter — team projects
+/enforce prod    # Full security stack — production code
+/enforce off     # Turn it off
 ```
 
-Or just say in chat:
+Or just say it in chat:
 ```
 "stop enforce"   # turns it off
 "normal mode"    # turns it off
 ```
 
-### Set the Project Anchor
+The level you pick is **remembered across sessions** — set it once.
+
+### What each level does
+
+| Level | Best for | What it adds |
+|-------|----------|--------------|
+| **solo** | Personal projects, learning | Core rules: research before coding, test before shipping, no secrets |
+| **team** | Shared codebases | + documentation, parallel tasks, dependency tracking |
+| **prod** | Production systems | + full security audit, performance checks, monitoring rules |
+
+### Set a project anchor (optional)
 
 ```
 /enforce-init "<your goal>"
 ```
 
-The main agent detects your tech stack, captures requirements, generates a task
-list (native tasks + mirrored into the anchor), and writes a managed block into
-the working-directory `CLAUDE.md` (between `<!-- enforce-anchor:start/end -->`
-markers — your existing content is preserved). This anchor is the anti-drift
-reference the main agent re-reads to stay on the goal: it owns the SDLC loop and
-runs the per-task gates (testing, QA, reliability, maintainability,
-sustainability) while routing each task to the owning department subagent.
-
-The anchor also drives the **outer task loop**: once `architecture.md` is
-finalized, the task list is auto-generated from it (as a dependency DAG with
-cycles rejected) into `progress.md` and paused for your approval. On approval,
-the main agent works each Open task through the inner SDLC loop (routing
-cross-department tasks via `team-orchestrator` and dispatching independent steps
-to subagents in background, concurrency-capped; a failed gate retries at most 3
-times before escalating to you), closes it only when verified, and continues to
-the next — stopping to ask you on any decision — until no Open tasks remain.
-These bounds (acyclic task DAG, capped dispatch, bounded gate-retry) keep the
-loop free of deadlock and gate-cycle livelock. When
-the goal, stack, or tasks change, the main agent keeps the anchor and the native
-task list in sync. Editing existing code removes the superseded/stale code so the
-codebase stays clean (enforced by the `CLEAN CODEBASE` rule + Stop-guard check).
-
-### What Each Level Does
-
-| Level | Best For | What It Checks |
-|-------|----------|---------------|
-| **solo** | Personal projects, learning | Basic rules: research before coding, test before shipping, no secrets |
-| **team** | Shared codebases | + Documentation, parallel tasks, dependency tracking |
-| **prod** | Production systems | + Full security audit, performance checks, monitoring rules |
+This detects your tech stack, captures your requirements, and writes a small
+managed block into your project's `CLAUDE.md` (between
+`<!-- enforce-anchor:start/end -->` markers — your own content is left
+untouched). Claude re-reads this anchor to stay on the goal as work progresses.
+When the goal, stack, or task list changes, the anchor is kept in sync.
 
 ---
 
 ## What It Catches (Examples)
 
 | Situation | What enforce-mode does |
-|-----------|----------------------|
-| Claude tries to commit an AWS key | Flags the secret — "move to env vars / a secret manager" |
+|-----------|------------------------|
+| Claude tries to commit an AWS key | Flags the secret — "move it to env vars / a secret manager" |
 | Claude writes code without checking docs | Advises: "research this library first" |
-| Claude says "it should work" without testing | Reminds: "run the tests and show output" |
-| Claude uses `eval()` or SQL string concatenation | Flags security anti-pattern |
-| Claude runs a training script in foreground | Advises: "use background mode for long tasks" |
-| Claude writes code using `prisma` without searching docs | Advises: search the docs to verify the API first |
-| Claude finishes response with low research coverage | GTC score shown in terminal: `GTC: 35/100 [FAIL]` |
+| Claude says "it should work" without testing | Reminds: "run the tests and show the output" |
+| Claude uses `eval()` or SQL string concatenation | Flags the security anti-pattern |
+| Claude runs a long training script in the foreground | Advises: "use background mode for long tasks" |
+| Claude finishes with low research coverage | Shows a GTC score in your terminal: `GTC: 35/100 [FAIL]` |
 
-### How Enforcement Works
+---
 
-enforce-mode is **advisory** — it never blocks, denies, or hard-stops an action. Every
-check approves the tool call and injects guidance:
+## How Enforcement Works
 
-```
-Every check → guidance injected (the action always runs)
-  • Terminal:  a [WRITE-GUARD] / [BASH-GUARD] line you see
-  • Claude:    additionalContext so it acts on the advice
-  • Stop hook: a pre-completion summary + GTC score
-```
+enforce-mode is **advisory by design** — it never blocks, denies, or hard-stops
+an action. Every check lets the action run and simply adds guidance:
 
-Nothing is ever denied or hard-stopped — the model stays in control and decides how to
-act on each advisory. No retry loops, no deadlocks by construction.
+- **In your terminal** — a short guidance line (via stderr) so you always see
+  what's happening.
+- **In Claude's context** — the same guidance so Claude can act on it.
+- **At the end of a response** — a pre-completion summary plus the GTC score.
 
-### Active Hooks (minimal pipeline)
+Because nothing is ever denied, there are no retry loops and no way to get stuck.
+Claude stays in control and decides how to act on each advisory.
 
-This build runs a **lean 3-hook pipeline** — the core enforcement loop, nothing else:
-
-| Event | Hook | Role |
-|-------|------|------|
-| `SessionStart` | `enforce-activate.js` | Injects universal + detected-domain rules; project & skill detection |
-| `PreToolUse` (Write/Edit/NotebookEdit) | `enforce-write-guard.js` | Advisory write-time checks: secrets, research/grounding, security anti-patterns (never blocks) |
-| `Stop` | `enforce-stop-guard.js` | Pre-completion checks + GTC score |
-
-The remaining hook scripts ship in `hooks/` but are **not registered** in this
-build. The features they powered (listed below as *extended hooks*) are dormant
-unless you wire them back into `.claude-plugin/plugin.json`.
-
-### Dual Output
-
-Enforcement messages from the active hooks appear in **two places**:
-- **Your terminal** (via stderr) — you always see what's happening
-- **Claude's context** (via additionalContext) — Claude acts on the guidance
+Under the hood this is a small set of lightweight Node hooks that run on a few
+Claude Code events — session start, every prompt, before a file write, and at
+the end of a response. They are fast (~100ms each), run entirely on your machine,
+and add no external dependencies.
 
 ---
 
 ## Smart Project Detection
 
-enforce-mode automatically detects what type of project you're working on and activates relevant rules. No configuration needed.
+enforce-mode looks at your project and turns on the rules that fit — no
+configuration needed.
 
 **Examples:**
-- Has `package.json` with React? → Activates frontend rules (XSS prevention, accessibility)
-- Has `requirements.txt` with Flask? → Activates API security rules
-- Has `.sol` files? → Activates blockchain rules (reentrancy, gas limits)
-- Has `Dockerfile`? → Activates container security rules
+- `package.json` with React → frontend rules (XSS prevention, accessibility)
+- `requirements.txt` with Flask → API security rules
+- `.sol` files → blockchain rules (reentrancy, gas limits)
+- `Dockerfile` → container security rules
 
-**41 project types detected** including: ML/AI, web frontend, backend APIs, mobile apps, databases, payments, DevOps, and more.
-
----
-
-## Auto-Skill Loading (extended hook — dormant in minimal build)
-
-> Powered by `enforce-skill-loader.js` / `enforce-skill-auto-loader.js`, which are
-> **not registered** in the minimal pipeline. Re-add their `PreToolUse` entries to
-> `plugin.json` to enable. `enforce-activate.js` still *detects and lists* relevant
-> skills at session start; it just no longer auto-injects them per tool call.
-
-enforce-mode automatically loads relevant skills based on what code you're writing:
-
-- Writing authentication code? → Security review skill loaded
-- Writing React components? → Frontend best practices loaded
-- Researching Kubernetes? → DevOps skill loaded
-
-**Dynamic discovery** scans all installed skills from `~/.claude/skills/` — not just ECC skills. Marketplace skills, user skills, and plugin skills are all discoverable. Excluded: enforce-mode and caveman (infrastructure, not code review).
-
-**68+ skills auto-discoverable** from your installed skill library. New skills you install are picked up automatically within 5 minutes.
-
-No manual `/ecc:skill-name` invocation needed — rules inject directly into context.
+**41 project types** are recognized, spanning ML/AI, web frontends, backend
+APIs, mobile apps, databases, payments, DevOps, and more.
 
 ---
 
-## Ground Truth Enforcement
+## Department Agents
 
-enforce-mode tracks **what Claude actually researched** vs **what libraries Claude uses in code**.
+enforce-mode ships **28 department subagents** that bring the `CLAUDE.md`
+routing map to life out of the box. Install the plugin and the whole team is
+available as `enforce-mode:<agent>` — no per-project setup.
 
-### How It Works
+Every agent carries an explicit **tech stack** plus **engineering-method and
+efficiency** guidance, and is built on the same contract:
 
-1. **Capture** *(extended hook — dormant in minimal build)*: When Claude searches (WebSearch, context7, Exa), a PostToolUse hook (`enforce-research-capture.js`) captures the results — query text, snippets, URLs — into session state per library. Re-register it to feed the gate and grounding checks.
-2. **Check**: When Claude writes code with external imports, the `PreToolUse` write-guard checks if each library has captured ground truth. **No ground truth → advisory** — guidance is injected to research the API first, and the write still proceeds (never denied). In the minimal build, with capture dormant, this check stays quiet by design.
-3. **Inject**: When ground truth exists, relevant doc snippets are injected as context — Claude sees the docs right when writing.
-4. **Score**: A GTC (Ground Truth Confidence) score is computed every response by the `Stop` hook and displayed in your terminal.
-
-### GTC Score
-
-Computed from 6 signals — all hook-measured, zero Claude self-assessment:
-
-| Signal | Points | What it measures |
-|--------|--------|-----------------|
-| Research coverage | 0-30 | % of external libs with captured ground truth |
-| Search specificity | 0-20 | Did search queries contain the library name? |
-| Doc alignment | 0-20 | Do code API calls appear in captured snippets? |
-| Skill compliance | 0-15 | Were relevant review skills loaded? |
-| Test coverage | 0-15 | Were tests run for changed code? |
-| Violations | -5 each | PECK violations reduce score |
-
-```
-┌─────────────────────────────────────┐
-│ GTC: 92/100 [██████████░] HIGH      │
-│ Research: 30/30 | Docs: 18/20       │
-│ Specificity: 20/20 | Skills: 15/15  │
-│ Tests: 15/15 | Violations: -6       │
-└─────────────────────────────────────┘
-```
-
-- **90-100 HIGH**: Full compliance
-- **70-89 GOOD**: Minor gaps
-- **50-69 LOW**: Review recommended
-- **0-49 FAIL**: Stop hook flags the gaps (advisory) for Claude to address before completing
-
----
-
-## Grounded Generation — API-symbol attribution (v3.4)
-
-Knowing Claude researched the *library* `stripe` is not the same as knowing the
-*method* it just wrote — `stripe.subscriptions.fabricatePlan()` — actually exists.
-Library-level checks miss invented method signatures, the most common form of code
-hallucination.
-
-The **Grounded-Generation Layer** closes that gap. After a library is
-research-verified, it extracts every external API call symbol in the code and
-checks each one against the documentation snippets that were actually captured:
-
-- **Grounded** — the symbol appears in a researched doc → trusted, docs injected as context.
-- **UNVERIFIED** — the symbol appears in *no* researched source → flagged. Claude must
-  search the exact symbol to confirm it exists, or tag it `// UNVERIFIED: <symbol>` and
-  tell you it came from training memory, not verified docs.
-
-This is citation-attribution adapted to code — grounding each generated API call in a
-real source, the same principle behind reliable-citation RAG research
-([VeriCite, SIGIR-AP 2025](https://arxiv.org/abs/2510.11394)) and the
-abstain-when-ungrounded finding from semantic-entropy hallucination detection
-([Farquhar et al., *Nature* 2024](https://www.nature.com/articles/s41586-024-07421-0)).
-
-**Low false positives by design** ([ZeroFalse, 2025](https://arxiv.org/abs/2510.02534)):
-it only fires when research exists to check against, never flags language builtins
-(`.map`/`.then`/`.push`) or self-references (`this`/`res`), and only escalates
-high-confidence deep call chains.
-
-**Advisory by design**: the `grounding` check is suppressed at `solo`, and surfaces as
-guidance (never a deny or block) at `team`/`prod`. There is always one clear next step —
-search the flagged symbol; once captured, it grounds and the advisory clears.
-
----
-
-## Department Agents (v3.6)
-
-enforce-mode ships **28 department subagents** that realize the `CLAUDE.md` Rule 2
-routing map out of the box. Install the plugin and the whole team is available as
-`enforce-mode:<agent>` — no per-project authoring required.
-
-Every agent carries an explicit **tech stack** and **engineering-method + efficiency**
-section so it knows the concrete tools of its trade and how to use them well — not just
-the principles.
-
-Every agent is built with the same enforce-mode contract baked into its system
-prompt:
-
-- **Ground before acting** — verify APIs/versions/behavior against primary sources
-  before recommending or coding. No "it should work."
-- **POV backed by ground truth** — every claim cites evidence (doc link, paper +
-  table/page, source file, command output). Opinion without evidence is invalid.
-- **Report failures as-is** — a failed run/test/result is reported with its output,
-  never reframed as success.
-- **Stay in your department** — defer cross-department work to the main agent;
-  cross-cutting work goes through `team-orchestrator` first.
+- **Ground before acting** — verify APIs, versions, and behavior against primary
+  sources before recommending or coding. No "it should work."
+- **Back every claim with evidence** — a doc link, a source file, a command
+  output. Opinion without evidence doesn't count.
+- **Report failures as-is** — a failed test is reported with its output, never
+  reframed as success.
+- **Stay in your lane** — cross-department work goes through `team-orchestrator`
+  first.
 
 | Department | Agent |
 |---|---|
 | Architecture / contracts | `solution-architect` |
-| Algorithms / performance (complexity targets) | `research-solution-architect` |
-| Server-side services / APIs / business logic | `backend-engineer` |
-| Web UI (React/TS) / accessibility / perf | `frontend-engineer` |
+| Algorithms / performance | `research-solution-architect` |
+| Server-side services / APIs | `backend-engineer` |
+| Web UI (React/TS) / accessibility | `frontend-engineer` |
 | End-to-end vertical slices (API→UI) | `fullstack-engineer` |
 | Shared UI components / design tokens | `design-system-engineer` |
-| User flows / IA / prototypes (unhappy paths) | `ux-flow-designer` |
+| User flows / IA / prototypes | `ux-flow-designer` |
 | Data tier — schema / indexing / migrations | `database-engineer` |
 | Mobile apps (iOS/Android/RN/Flutter) | `mobile-engineer` |
-| LLM app layer — RAG / agents / eval / safety | `ai-application-engineer` |
-| Smart contracts / on-chain (Solidity) | `blockchain-engineer` |
+| LLM app layer — RAG / agents / safety | `ai-application-engineer` |
+| Smart contracts (Solidity) | `blockchain-engineer` |
 | Vision / steganalysis modeling | `computer-vision-engineer` |
 | ML training & serving | `ml-engineer` |
-| Data pipelines / datasets / leakage | `data-engineer` |
-| Statistics / experiments / figures | `data-scientist` |
+| Data pipelines / datasets | `data-engineer` |
+| Statistics / experiments | `data-scientist` |
 | Research / citations / SOTA | `research-agent` |
 | CI/CD / IaC / GPU ops | `devops-engineer` |
 | Cloud / cost / scaling | `cloud-engineer` |
@@ -346,11 +234,51 @@ Agent files live in [`agents/`](agents/) and are validated by `tests/test-agents
 
 ---
 
+## Ground Truth & the GTC Score
+
+enforce-mode tracks **what Claude actually researched** versus **what its code
+relies on**, and turns that into a single score you can read at a glance.
+
+The **GTC (Ground Truth Confidence)** score is computed from measurable signals
+on every response — not Claude grading itself, but hooks measuring what really
+happened:
+
+| Signal | Points | What it measures |
+|--------|--------|------------------|
+| Research coverage | 0–30 | % of external libs with captured ground truth |
+| Search specificity | 0–20 | Did searches include the library name? |
+| Doc alignment | 0–20 | Do the code's API calls appear in researched docs? |
+| Skill compliance | 0–15 | Were relevant review skills loaded? |
+| Test coverage | 0–15 | Were tests run for changed code? |
+| Violations | −5 each | Each rule violation lowers the score |
+
+```
+┌─────────────────────────────────────┐
+│ GTC: 92/100 [██████████░] HIGH       │
+│ Research: 30/30 | Docs: 18/20        │
+│ Specificity: 20/20 | Skills: 15/15   │
+│ Tests: 15/15 | Violations: -6        │
+└─────────────────────────────────────┘
+```
+
+- **90–100 HIGH** — full compliance
+- **70–89 GOOD** — minor gaps
+- **50–69 LOW** — review recommended
+- **0–49 FAIL** — the gaps are flagged (advisory) for Claude to address
+
+**Grounded generation** goes one level deeper: knowing Claude researched the
+library `stripe` is not the same as knowing the *method* it wrote
+(`stripe.subscriptions.fabricatePlan()`) actually exists. enforce-mode checks
+each external API symbol against the docs that were actually captured. A symbol
+found in a researched source is **grounded**; one found nowhere is flagged
+**UNVERIFIED** so Claude searches it or labels it as coming from memory. This is
+advisory too — it points to one clear next step and never blocks.
+
+---
+
 ## Configuration (Optional)
 
-enforce-mode works out of the box with sensible defaults. For customization:
-
-### Set Default Level
+enforce-mode works out of the box. To change the default level:
 
 **Environment variable:**
 ```bash
@@ -364,73 +292,33 @@ export ENFORCE_DEFAULT_LEVEL=team
 }
 ```
 
-### Level Persistence
-
-When you type `/enforce prod`, it saves across sessions — no need to type it every time.
-
----
-
-## How It Works (Technical)
-
-```
-You start a Claude Code session
-  ↓
-enforce-mode scans your project directory
-  ↓
-Detects project type (React? Python? Terraform?)
-  ↓
-Loads universal rules + project-specific rules
-  ↓
-Watches every tool call Claude makes
-  ↓
-Warns → Blocks → Hard-stops on repeated violations
-```
-
-**Key technical details:**
-- Zero external dependencies (pure Node.js)
-- < 150ms per check (usually ~100ms)
-- Per-session isolation (one session's state doesn't affect others)
-- 8KB max context budget (doesn't bloat your conversations)
-- Dual output: stderr (user terminal) + additionalContext (Claude context)
-- GTC score computed per response by the `Stop` hook, displayed via stderr (zero context cost)
-- Minimal pipeline: 3 registered hooks (activate · write-guard · stop-guard); extended hooks ship in `hooks/` but are unregistered (see *Active Hooks*)
-
----
-
-
-## Adding Your Own Rules
-
-Want to add rules for your specific project type? See the [Contributing Guide](#contributing).
-
-**Quick version:**
-1. Create a pattern file: `hooks/domains/my-domain.js`
-2. Add detection signals: `hooks/enforce-detect.js`
-3. Add rule text: `rules/domains/my-domain.md`
-
 ---
 
 ## FAQ
 
 **Q: Will this slow down Claude Code?**
-A: No. Each check takes ~100ms. You won't notice any delay.
+A: No. Each check takes about 100ms — you won't notice it.
 
 **Q: Can I turn it off for one session?**
 A: Yes. Say "stop enforce" or type `/enforce off`.
 
 **Q: Does it work on Windows?**
-A: Yes. Fully supported on macOS, Linux, and Windows.
+A: Yes — fully supported on macOS, Linux, and Windows.
 
-**Q: What if Claude gets stuck because of a rule?**
-A: It can't. enforce-mode is advisory — every check approves the action and only injects guidance. Nothing is ever blocked or denied, so there are no retries or deadlocks.
+**Q: Can a rule ever get Claude stuck?**
+A: No. enforce-mode is advisory — every check approves the action and only adds
+guidance. Nothing is blocked, so there are no retries or deadlocks.
 
 **Q: Does it use the internet?**
-A: No. Everything runs locally. Zero API calls, zero network requests.
+A: No. Everything runs locally — zero API calls, zero network requests.
 
-**Q: Can I use it with other plugins?**
+**Q: Can I use it alongside other plugins?**
 A: Yes. It coexists with caveman-mode and other Claude Code plugins.
 
 **Q: What is the GTC score?**
-A: Ground Truth Confidence — a 0-100 score computed from measurable signals (research coverage, doc alignment, skill compliance, tests). It's not Claude self-assessing; it's hooks measuring what actually happened. Displayed in your terminal every response.
+A: Ground Truth Confidence — a 0–100 score built from measurable signals
+(research coverage, doc alignment, skill compliance, tests). Hooks measure what
+actually happened; Claude does not grade itself.
 
 ---
 
@@ -440,8 +328,13 @@ A: Ground Truth Confidence — a 0-100 score computed from measurable signals (r
 2. Create a feature branch
 3. Add your domain (pattern file + detection rules + rule text)
 4. Write tests
-5. Run all tests (must pass)
-6. Submit a PR
+5. Run all tests (they must pass)
+6. Open a PR
+
+**Adding your own rules — quick version:**
+1. Create a pattern file: `hooks/domains/my-domain.js`
+2. Add detection signals: `hooks/enforce-detect.js`
+3. Add rule text: `rules/domains/my-domain.md`
 
 ---
 
@@ -452,5 +345,8 @@ A: Ground Truth Confidence — a 0-100 score computed from measurable signals (r
 ---
 
 <p align="center">
-  <b>v3.8.0</b> — advisory-only model (never blocks/denies), live <code>/enforce</code> level switching, 28 tech-stack-aware department agents, 41 domains, 68+ auto-discoverable skills, grounded-generation (API-symbol attribution), GTC scoring, ground truth guidance, dual output, zero dependencies
+  <b>v3.12.0</b> — advisory-only model (never blocks or denies), live
+  <code>/enforce</code> level switching, 28 tech-stack-aware department agents,
+  41 project domains, grounded-generation (API-symbol attribution), GTC scoring,
+  dual output (terminal + context), zero dependencies
 </p>
