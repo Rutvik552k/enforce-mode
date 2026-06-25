@@ -51,6 +51,7 @@ $hookFiles = @(
     'enforce-bash-guard.js',
     'enforce-stop-guard.js',
     'enforce-project-docs.js',
+    'enforce-dependency-map.js',
     'enforce-prompt-append.js',
     'enforce-uninstall.js'
 )
@@ -114,6 +115,12 @@ if (!hookExists(settings.hooks.SessionStart, 'enforce-project-docs')) {
   settings.hooks.SessionStart.push({
     matcher: '',
     hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-project-docs.js', timeout: 10000 }]
+  });
+}
+if (!hookExists(settings.hooks.SessionStart, 'enforce-dependency-map')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-dependency-map.js', timeout: 10000 }]
   });
 }
 

@@ -47,6 +47,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-project-docs.js",
             "timeout": 10,
             "statusMessage": "Checking project docs..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-dependency-map.js",
+            "timeout": 10,
+            "statusMessage": "Checking dependency map..."
           }
         ]
       }
