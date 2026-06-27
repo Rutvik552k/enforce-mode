@@ -10,13 +10,17 @@
 'use strict';
 
 // The exact text appended to every user query.
+// Short anti-drift reminder only — the full ruleset lives in universal.md
+// (loaded as a global rule, in context all session) and the SessionStart
+// enforce hook. This per-turn nudge points back to that text; it does not
+// re-state it, to avoid re-injecting ~290 words every turn.
 const APPEND_TEXT = [
-  'Always follow the rules mentioned in universal.md from enforce plugin',
-  'If you encounter any ambiguous query and need more data, STOP and ask the user before processing — use the AskUserQuestion tool with concrete options (structured option cards), not a free-text question.',
-  'Route each task to its owning department subagent (see the universal.md routing map); do not do specialist work in the main agent.',
-  'After assigning a task to a subagent, the main agent must not block on it — dispatch in background, continue productive work, and act on its result when the completion notification fires.',
-  'Task loop (outer, wraps the SDLC loop — team/prod levels): once architecture.md is finalized, auto-generate the task list from it — build a task DAG, reject dependency cycles, topo-sort into parallel batches — into progress.md `## Open Tasks`, then PAUSE for user approval before working. On approval, drive each Open task through the inner SDLC loop — cross-department tasks go to team-orchestrator first for the ordered chain + parallel/sequential marks + gates, then dispatch independent steps to department subagents in background without idling, capping concurrent in-flight dispatch and queueing the rest. Inner-loop gate failures retry a bounded number of times (max 3); on exhaustion, STOP and escalate to the user via the AskUserQuestion tool — structured option cards plus the failing evidence, not a free-text prompt (prevents gate-cycle livelock). Move a task to `## Closed Tasks` only when verified (tests run, output shown), then pick up the next. Whenever a task needs a decision the user owns (scope, trade-off, ambiguity, grounded concern), STOP and ask the user via the AskUserQuestion tool with concrete options (option cards), never a free-text question. Repeat until no Open tasks remain.',
-  'Critique gate (mandatory, every implementation): after any design/solution a subagent returns — and BEFORE writing implementation code — the main agent MUST run a 3-lens critique, each finding severity-tagged and ground-truth-cited (no praise padding): (1) Engineering / industry methods — SOLID, design patterns, language idioms, error handling, testability, dead-code (cite style guide / lang docs); (2) DSA / algorithms — Big-O time + space, data-structure fit, O(n^2)->O(n log n), streaming vs in-memory, P99 not avg (cite benchmark / source); (3) Security — OWASP Top 10 on the touched surface, authz/authn, input validation, injection, secrets, dependency CVEs. Emit the verdict as a `CRITIQUE GATE: PASS|FAIL` block. On any CRITICAL/STRICT finding, send the design back to the owning subagent to fix (bounded retry, max 3), then proceed; if still failing, STOP and escalate to the user via the AskUserQuestion tool (option cards) with the failing evidence. Never write implementation code on an unresolved CRITICAL finding.',
+  'ENFORCE active. Obey universal.md (already in context). Per-turn reminders:',
+  '- Ambiguous query, or any decision the user owns (scope/trade-off/grounded concern) → STOP, ask via AskUserQuestion with option cards, never free-text.',
+  '- Route each task to its owning department subagent (universal.md routing map); no specialist work in the main agent.',
+  '- Dispatch subagents in background; never block or idle waiting on one — act on each result when its notification fires.',
+  '- Every implementation: before writing code, run the 3-lens critique gate (Engineering / DSA / Security), ground-truth-cited, and emit a CRITIQUE GATE: PASS|FAIL block. CRITICAL/STRICT → back to the owning subagent (max 3 retries), then escalate via AskUserQuestion.',
+  '- Outer task loop (team/prod): finalized architecture.md → task DAG → progress.md `## Open Tasks` → PAUSE for approval; move to `## Closed Tasks` only when verified (tests run, output shown).',
 ].join('\n');
 
 function readStdin() {

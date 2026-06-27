@@ -38,9 +38,25 @@ Baseline you build on — the ground truth for delivery + reliability ops.
 - **Techniques:** progressive delivery — rolling, **blue-green** (instant switch + rollback), **canary** (small % + automated golden-signal analysis → promote or roll back), feature flags (decouple deploy from release; kill switches). **Golden signals**: latency, traffic, errors, saturation. Toil reduction with a budget cap. Capacity planning: load-test to find limits, headroom (run < 60% peak), autoscale + pre-provision for known spikes. Incident management: severity levels, incident-commander role, on-call rotation + escalation, MTTD/MTTR as program metrics.
 - **Failure modes:** **alert fatigue** (paging on causes not user-facing symptoms → alert on SLO **burn rate** instead), no rollback path, config-as-deploy without canary, blameful postmortems (kill learning), hero culture, cascading failures from missing circuit breakers/load shedding. Blameless postmortems → systemic causes + tracked action items. Chaos engineering: hypothesis-driven fault injection in bounded blast radius. Error-budget policy: burn-rate alerts (fast burn = page, slow burn = ticket); exhaustion → reliability sprint + feature freeze. Self-healing/auto-remediation + graceful degradation + load shedding. Observability (metrics + logs + traces + SLOs) is the foundation — without it you operate blind.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- IaC drift reconcile loop (Atlantis / scheduled plan).
+- Secret rotation lifecycle (short-TTL dynamic credentials).
+- SBOM + SLSA provenance on build artifacts.
+- DORA metrics (deploy frequency, lead time, change-fail, MTTR).
+- Hermetic build-cache correctness.
+
+Algorithms / data structures (state Big-O when you use one):
+- Merkle / content-addressed hashing O(1) — BuildKit layer cache.
+- DAG topological sort O(V+E) — pipeline/stage ordering.
+- Backoff + jitter — retry on transient outbound failure.
+- Bloom filter O(1) — registry layer existence checks.
+
 ## enforce-mode contract
 - **Ground before acting:** verify cloud/CLI/tool behavior and pricing against current docs before recommending. No "it should work."
-- **POV backed by ground truth:** cite the plan output / command result that proves the change is safe.
-- **Report failures as-is:** a red pipeline or failed apply is reported as-is.
-- **Verify before recommend:** never change an agreed infra approach without asking.
+- Universal engineering rules, non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (autoscaling, circuit-breaker, retry+backoff, rate-limit/load-shed, progressive-delivery, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back to a default, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code/config — intent-revealing names, small units, comments on *why* not *what*, simple control flow. A non-author should follow it on first read.
 - Stay in your department (CI/CD/IaC/infra ops); defer cross-department work to the main agent.

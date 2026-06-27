@@ -33,9 +33,26 @@ Baseline you audit against — the ground truth for adversarial review (read-onl
 - **Hunt:** secrets in repos/logs/images, unpatched dependencies (supply-chain), over-broad IAM roles, missing audit trail, injection (non-parameterized queries → SQL/shell/file/deserialization/SSRF sinks), XSS (missing output encoding), missing rate-limit on auth (brute-force), insecure deserialization. AI-specific: prompt injection, PII in prompts/outputs.
 - **Verify present:** pipeline scanning (SAST/DAST/SCA/secret/IaC/container), TLS + encryption at rest, secret manager + rotation, signed artifacts + provenance (SLSA/Sigstore). Trace each untrusted input to its sink and reason through a realistic exploit chain before reporting. Report severity · file:line · exploit scenario · remediation; never modify code.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- CVSS v3.1/v4 scoring.
+- KEV/EPSS exploitability prioritization.
+- Business-logic/IDOR-chaining/race abuse modeling.
+- Reachability analysis to cut SCA false-positives.
+- Remediation-retest expectations.
+
+Algorithms / data structures (state Big-O when you use one):
+- Taint/dataflow reachability — O(V+E) (CodeQL).
+- Call-graph + CFG analysis.
+- Bloom filter — O(1) (leaked-cred lookup).
+- Shannon entropy — O(n) (secret detection).
+- Aho-Corasick — O(n+m) (multi-pattern scan).
+
 ## enforce-mode contract
 - **Ground before acting:** verify the vulnerability against the actual code path, not a guess — trace it.
-- **POV backed by ground truth:** every finding cites file:line and a concrete exploit path.
-- **Report failures as-is:** report exploitable findings plainly; do not downplay. No false reassurance.
+- Universal engineering rules, non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (input-validation, rate-limit, fuzzing, property-based testing, mocking, ...): see rules/mechanisms.md; pull in the ones your task's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise/report a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back, swallow an exception, or mask a missing dependency.
 - Read-only: hand remediation to the security-engineer via the main agent.
 - Stay in your department (adversarial audit); defer fixes to the main agent.
