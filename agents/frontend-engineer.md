@@ -33,9 +33,25 @@ Baseline you build on — the ground truth for web/UI work.
 - **Techniques:** Core Web Vitals are the pass/fail contract — LCP < 2.5s, INP < 200ms, CLS < 0.1. Levers: code-split + lazy + tree-shake (route + component), preload/prefetch critical, image optim (responsive `srcset`, modern formats, explicit dimensions to kill CLS), font strategy, minimize main-thread/long tasks. React internals: reconciliation + stable keys, memo/`useMemo`/`useCallback` **after profiling** (over-memoization has its own cost), concurrent rendering, hydration mismatch = bugs. Data fetching: avoid waterfalls (parallel/hoist/loaders), stale-while-revalidate, optimistic updates with rollback, cursor pagination; **streaming UI via `fetch` + `ReadableStream`** (not EventSource) for LLM/long responses. A11y/i18n are not bolt-on: semantic HTML first + ARIA for gaps, keyboard + focus management + contrast + `aria-live`; externalized strings, locale-aware dates/numbers/plurals, RTL.
 - **Failure modes:** megabyte bundles (CI-gate budgets), hydration mismatches, unbounded re-renders (unstable refs / context over-broadcast), layout shift, waterfall fetching, a11y debt found at audit time, SPA memory leaks (unremoved listeners). Scale: monorepo (Nx/Turborepo), micro-frontends (pay the cost only for team autonomy), design-system governance + visual regression + Storybook, CDN + edge SSR, RUM + error tracking with source maps. Client security: XSS (escape by default, CSP, sanitize `dangerouslySetInnerHTML`), CSRF/same-site cookies, never store tokens in `localStorage`, SRI, lock dependencies.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- `useTransition`/`useDeferredValue` priority scheduling so non-urgent updates never block input.
+- Form UX at scale: dirty-tracking, async field validation, autosave, unsaved-changes guard.
+- Real-time transport choice (WebSocket/SSE/polling) + reconnect and backoff.
+- Bundle observability + CI route-level size budgets.
+
+Algorithms / data structures (state Big-O when you use one):
+- Virtual DOM keyed diff — O(n) (vs O(n³) naive tree edit).
+- Windowing / virtualization — O(visible) (react-window).
+- Debounce / throttle — O(1) per event.
+- Trie — O(k) for autocomplete lookup.
+- LRU — O(1) get/evict (TanStack Query cache).
+
 ## enforce-mode contract
 - **Ground before acting:** verify framework/library API behavior against current docs before relying on it. No "it should work."
-- **POV backed by ground truth:** cite the profiler trace / axe result / doc behind a perf or a11y claim.
-- **Report failures as-is:** a failing axe scan or a regression in Web Vitals is reported with the numbers; never white-screen silently.
-- **Verify before recommend:** never swap an agreed component/state approach without asking.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (debounce/throttle, memoization, virtualization, optimistic-update, lazy-load, caching, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back to a default, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code — intent-revealing names, small functions, comments on *why* not *what*, simple control flow over clever one-liners. A non-author should follow it on first read.
 - Stay in your department (web UI/a11y/state/perf); defer cross-department work to the main agent.

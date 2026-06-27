@@ -69,6 +69,7 @@ chmod +x "$HOOKS_DIR/enforce-stop-guard.js" 2>/dev/null || true
 # Copy rules directory
 mkdir -p "$CLAUDE_DIR/rules/domains"
 cp "$SCRIPT_DIR/../rules/universal.md" "$CLAUDE_DIR/rules/"
+cp "$SCRIPT_DIR/../rules/mechanisms.md" "$CLAUDE_DIR/rules/"
 cp "$SCRIPT_DIR/../rules/domains/"*.md "$CLAUDE_DIR/rules/domains/"
 
 # Record exactly which domain rule files we copied — lets uninstall remove the

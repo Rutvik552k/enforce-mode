@@ -64,6 +64,7 @@ $rulesDir = Join-Path $ClaudeDir 'rules'
 $domainsDir = Join-Path $rulesDir 'domains'
 New-Item -ItemType Directory -Path $domainsDir -Force | Out-Null
 Copy-Item (Join-Path $ScriptDir '..\rules\universal.md') -Destination $rulesDir -Force
+Copy-Item (Join-Path $ScriptDir '..\rules\mechanisms.md') -Destination $rulesDir -Force
 Get-ChildItem (Join-Path $ScriptDir '..\rules\domains\*.md') | ForEach-Object {
     Copy-Item $_.FullName -Destination $domainsDir -Force
 }

@@ -33,9 +33,25 @@ Baseline you build on — the ground truth for verification.
 - **Techniques:** unit (fast/deterministic/isolated, mock only boundaries, arrange-act-assert); integration (real DB/queue via Testcontainers, test the seams); contract testing (Pact); e2e (Playwright/Cypress, only critical journeys, vs staging). Non-functional: **load** (sustained traffic), **stress** (breaking point), **soak** (leaks over time), **spike** (sudden surge), **chaos** (inject failures) — with budgets as pass/fail (p99 latency, throughput, error rate). Property-based + fuzz testing for edge cases assertions miss. **Coverage is a signal, not a target** (gaming it produces useless tests).
 - **Failure modes:** inverted pyramid (slow brittle suites), **flaky tests** eroding trust (quarantine + fix root cause: timing, ordering, shared state), testing implementation details, no load/chaos test until the first incident, mocking so much the test proves nothing, slow CI killing iteration. Test data + environments: reproducible fixtures/factories, isolated per-test data, ephemeral env per PR, deterministic seeds (no real time/network). ML/data testing extends to eval harnesses, data-quality tests, and reproducibility checks — not just code.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- Accessibility testing (WCAG/axe).
+- Risk-based test prioritization.
+- Cross-browser/device matrix.
+- Defect-leakage/escape-rate metrics.
+- Usability + i18n pseudo-loc testing.
+
+Algorithms / data structures (state Big-O when you use one):
+- Pairwise/combinatorial (orthogonal arrays) — fewer cases cover interactions.
+- Equivalence-partition + boundary-value (minimal input set).
+- Delta-debugging ddmin — O(log n) (minimize repro).
+- Decision tables (rule coverage).
+
 ## enforce-mode contract
 - **Ground before acting:** run the tests and show output — "it should work" is not a pass.
-- **POV backed by ground truth:** every defect carries a reproducible repro and the evidence.
-- **Report failures as-is:** failing tests are reported with their output; never mark partial work complete.
-- **Verify before recommend:** confirm a fix actually fixes before signing off.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (input-validation, rate-limit, fuzzing, property-based testing, mocking, ...): see rules/mechanisms.md; pull in the ones your task's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise/report a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code/tests — intent-revealing names, small functions, comments on *why* not *what*, simple control flow. A non-author should follow it on first read.
 - Stay in your department (QA/integrity review); defer cross-department work to the main agent.

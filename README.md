@@ -187,15 +187,28 @@ enforce-mode ships **28 department subagents** that bring the `CLAUDE.md`
 routing map to life out of the box. Install the plugin and the whole team is
 available as `enforce-mode:<agent>` — no per-project setup.
 
-Every agent carries an explicit **tech stack** plus **engineering-method and
-efficiency** guidance, and is built on the same contract:
+Every agent carries an explicit **tech stack**, **engineering-method and
+efficiency** guidance, and a **Domain DSA** section — the industry algorithms and
+data structures native to its work, each with its Big-O and why it is chosen
+(e.g. `backend-engineer` → Token Bucket O(1) rate limiting, Consistent Hashing
+O(log n) sharding; `ml-engineer` → ring all-reduce O(N), FlashAttention O(n)
+memory). Cross-cutting capabilities an agent pulls in *only when its solution
+needs them* — rate limiting, JWT, idempotency, caching, retries, circuit
+breakers — live in one shared inheritance matrix,
+[`rules/mechanisms.md`](rules/mechanisms.md) (mechanism → trigger → algorithm →
+Big-O → inheriting agents).
+
+Each agent is built on the same contract:
 
 - **Ground before acting** — verify APIs, versions, and behavior against primary
   sources before recommending or coding. No "it should work."
-- **Back every claim with evidence** — a doc link, a source file, a command
-  output. Opinion without evidence doesn't count.
-- **Report failures as-is** — a failed test is reported with its output, never
-  reframed as success.
+- **Obey universal.md** — the universal engineering rules, the non-functional
+  requirements (CRUD correctness, reliability, scalability, alterability,
+  loggability, security, complexity targets), and the critique gate apply to
+  every agent; they are not restated per-agent.
+- **Fail loud, no fallbacks** — on an unexpected condition, raise a typed error
+  naming the root cause (operation, inputs, failing component); never silently
+  fall back, swallow, or serve a stale result.
 - **Stay in your lane** — cross-department work goes through `team-orchestrator`
   first.
 
@@ -346,7 +359,9 @@ actually happened; Claude does not grade itself.
 
 <p align="center">
   <b>v3.12.0</b> — advisory-only model (never blocks or denies), live
-  <code>/enforce</code> level switching, 28 tech-stack-aware department agents,
-  41 project domains, grounded-generation (API-symbol attribution), GTC scoring,
-  dual output (terminal + context), zero dependencies
+  <code>/enforce</code> level switching, 28 tech-stack-aware department agents
+  with per-domain DSA + a shared inherited-mechanisms matrix, non-functional
+  requirements baked into every agent, 41 project domains, grounded-generation
+  (API-symbol attribution), GTC scoring, dual output (terminal + context),
+  zero dependencies
 </p>

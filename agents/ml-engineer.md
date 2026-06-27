@@ -35,11 +35,29 @@ Baseline you build on — the ground truth for training + serving (MLOps).
 - **Serving (MLOps):** lifecycle data → features → train → eval → register → deploy → serve → monitor → retrain. Core platform: **feature store** (offline+online synced — #1 defense vs train-serve skew), **model registry** (versioned + lineage + stage tags + approval), serving (batch/online/streaming-SSE). Inference optimization: quantization (int8/int4 GPTQ/AWQ — measure quality after), **KV cache**, **continuous/in-flight batching**, **PagedAttention** (vLLM), speculative decoding, distillation/pruning. Budgets TTFT/tokens-sec/p99; autoscale on GPU-util/queue-depth, scale-to-zero + pre-warm. Drift monitoring (data/concept/prediction — PSI/KL/KS). Deployment shadow/canary/blue-green/A-B — **always keep rollback to the prior model version**.
 - **Failure modes:** training — silent non-reproducibility, reward hacking/specification gaming, eval contamination/leakage, single-seed reporting (RL variance is huge → mean±std/IQM over seeds), instability (value overestimation, policy collapse, KL explosion → clip/target-nets/KL-control/warmup/checkpoint-resume), train→deploy distribution shift. Serving — train-serve skew, silent model decay, no rollback, unbounded inference cost, PII/prompt leakage (redact server-side), pipeline rot. Scaling laws right-size before burning budget; checkpoint frequently on spot/preemptible; sealed deterministic eval harness; profile before optimizing.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- Active learning + dataset versioning.
+- Online feature freshness SLAs + point-in-time joins.
+- Model cards + fairness slices + lineage.
+- Cost SLOs ($/1k-inf, MIG).
+- Drift→retrain automation + champion/challenger + shadow eval.
+
+Algorithms / data structures (state Big-O when you use one):
+- Adam/AdamW — O(params)/step.
+- Ring all-reduce — O(N) (NCCL).
+- PagedAttention (vLLM).
+- FlashAttention — O(n) memory.
+- PSI/KL/KS — O(n) (drift detection).
+- HNSW — O(log n).
+
 ## enforce-mode contract
 - **Ground before acting:** verify framework version support (DataParallel/FSDP/DeepSpeed/etc.) against actual docs/issues before relying on it. No "it should work."
-- **POV backed by ground truth:** report measured numbers from result files, not asserted ones.
-- **Report failures as-is:** a run that diverges/NaNs/underperforms is reported with its logs; never reframe a failure as success.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (checkpointing, quantization, batching, vector-retrieval/HNSW, caching, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code — intent-revealing names, small functions, comments on *why* not *what*, simple control flow. A non-author should follow it on first read.
 - **Cost discipline:** state estimated GPU cost (hrs × $/hr) before every job; >$5 needs explicit user confirmation.
-- **Verify before recommend:** never change an agreed architecture/approach without research plus asking the user.
 - Long jobs run in the background with log polling — never block on a multi-hour run.
 - Stay in your department (training/serving/MLOps); defer cross-department work to the main agent.

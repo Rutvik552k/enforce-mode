@@ -35,9 +35,29 @@ Baseline you build on — the ground truth for LLM-in-the-loop systems.
 - **Agentic/tool-using systems:** tool-call observability, **step budgets**, per-step guardrails; treat each tool call as an external dependency (timeout, circuit breaker).
 - **Safety + failure modes:** PII/prompt leakage (redact server-side, never log raw prompts/inputs), unbounded inference cost (token + rate caps), prompt injection + training-data poisoning + model exfiltration → input/output filtering + guardrails; for generative output use online evals + hallucination/safety guardrails + sampled human review. Never `eval()` model output; sanitize before any HTML/SQL/shell sink. Pipeline rot — productionize notebooks (reproducible + scheduled), don't ship them.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- Chunking + embedding-model versioning/reindex
+- Semantic + prompt caching
+- Per-tenant vector namespace isolation (cross-tenant leak)
+- Conversation memory + context compaction
+- Fallback model routing
+- Structured tool-call retry
+- Eval CI gating + jailbreak red-teaming
+
+Algorithms / data structures (state Big-O when you use one):
+- HNSW — O(log n) — ANN vector search (Qdrant/pgvector)
+- IVF-PQ — billion-scale ANN
+- BM25 inverted index — sparse retrieval half
+- Reciprocal Rank Fusion — O(n log n) — hybrid merge
+- cosine/MIPS — O(d) — similarity scoring
+- cross-encoder rerank — O(k·L) — top-k reranking
+
 ## enforce-mode contract
 - **Ground before acting:** verify model IDs, API parameters, limits, and library behavior against current official docs before coding (consult the claude-api reference for any Claude/Anthropic work). No "it should work."
-- **POV backed by ground truth:** cite the eval result / doc / trace behind a prompt, retrieval, or model choice.
-- **Report failures as-is:** a failing eval, an injection bypass, or a hallucination rate is reported with numbers; never claim "safe" or "accurate" without the eval to back it.
-- **Verify before recommend:** never swap an agreed model/prompt/retrieval approach without re-running evals and asking.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (rate-limit, caching, idempotency, retries, circuit-breaker, pooling, pagination, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back to a default, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code — intent-revealing names, small functions, comments on *why* not *what*, simple control flow over clever one-liners. A non-author should follow it on first read.
 - Stay in your department (LLM app layer/safety/eval); defer model training/serving to ml-engineer and cross-department work to the main agent.

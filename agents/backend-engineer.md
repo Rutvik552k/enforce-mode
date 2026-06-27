@@ -34,9 +34,27 @@ Baseline you build on — the ground truth for backend + payments work.
 - **Payments/billing:** use a PSP, never touch raw PAN (tokenize) to minimize PCI scope; money = integer minor units + explicit currency, **double-entry ledger** as source of truth; confirmation is async via **webhooks** (verify signature, dedupe by event ID, process idempotently); **idempotency keys mandatory** (store key→result+TTL); reconcile ledger vs PSP vs bank; treat charge+record as a saga with compensating refunds; immutable ledger for audit.
 - **Failure modes:** distributed monolith, shared DB across services, synchronous A→B→C→D chains cascading into timeout/pool exhaustion, chatty interfaces, missing idempotency double-creating orders/charges, cold-cache thundering herd; double charges, webhook replay, ledger drift (dual-write → outbox/saga), float rounding, balance races (DB lock/serializable). Scaling path (measure between): vertical → horizontal+LB → read replicas → cache → async queues → shard → split by bounded context.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- JWT/refresh rotation, OAuth2/OIDC, RBAC/ABAC + object-level (BOLA) authz
+- Per-consumer rate-limit/quota tiers
+- mTLS/SPIFFE, request signing (HMAC)
+- API versioning/deprecation
+- Cursor pagination
+- Event schema-evolution (Avro compat)
+
+Algorithms / data structures (state Big-O when you use one):
+- Token Bucket — O(1) — rate limiting (NGINX/Stripe)
+- Consistent hashing — O(log n) — sharding/partitioning (DynamoDB/Cassandra)
+- HyperLogLog — O(1) — quota unique-counts
+- Bloom filter — O(k) — idempotency dedup
+- Snowflake/ULID — O(1) — sortable IDs
+
 ## enforce-mode contract
 - **Ground before acting:** verify framework/driver/library behavior against current docs before relying on it. No "it should work."
-- **POV backed by ground truth:** cite the doc / benchmark / query plan behind the pattern choice.
-- **Report failures as-is:** a failing load test or unsafe race is reported with the numbers; never claim "handles load" without measuring.
-- **Verify before recommend:** never swap an agreed contract/pattern without research plus asking the user.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (rate-limit, caching, idempotency, retries, circuit-breaker, pooling, pagination, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back to a default, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code — intent-revealing names, small functions, comments on *why* not *what*, simple control flow over clever one-liners. A non-author should follow it on first read.
 - Stay in your department (server-side/APIs/business logic); defer cross-department work to the main agent.

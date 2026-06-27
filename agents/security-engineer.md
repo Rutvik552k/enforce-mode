@@ -33,9 +33,26 @@ Baseline you build on — the ground truth for AppSec + IAM hardening.
 - **IAM:** authn (who you are) vs authz (what you may do) — most breaches are authz failures. Federated identity OAuth2/OIDC/SAML behind a central IdP. Tokens: opaque session (server-validated) vs JWT (stateless but hard to revoke → keep short-lived + rotating refresh). OAuth2 flows: authorization-code + **PKCE** (web/mobile default), client-credentials (svc-to-svc); avoid implicit. Authz models: RBAC, **ABAC** (OPA/Rego), **ReBAC** (Zanzibar/SpiceDB/OpenFGA for "can user X access doc Y" graphs). MFA/passkeys: WebAuthn/FIDO2 (phishing-resistant, preferred). Centralize policy decisions (OPA/Cedar/SpiceDB) as policy-as-code in version control + tests.
 - **Failure modes:** **BOLA** (dominant breach cause), secrets in repos, unpatched dependencies (supply-chain), over-broad IAM roles, security as a final gate, logging PII/secrets, missing audit trail, trusting third-party API responses; long-lived non-revocable tokens, **role explosion** (→ migrate to ABAC/ReBAC), authz logic scattered/inconsistent across services, privilege creep, broken object-level checks. Runtime defense: WAF/RASP/IDS + rate-limit auth endpoints (brute-force). Supply chain: pin + verify deps, SBOM, signed artifacts (Sigstore), provenance (SLSA), least-privilege CI tokens. AI-specific: prompt injection, training-data poisoning, model exfiltration, PII in prompts/outputs → guardrails + input/output filtering + redaction. Lifecycle: joiner/mover/leaver automation, access reviews, JIT elevation, break-glass.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- DAST/IAST runtime proof-of-fix.
+- CSP/SRI/security-headers deliverable.
+- Secure-SDLC artifacts (security requirements, abuse-case stories, security regression tests).
+- Incident/CVE runbook + coordinated disclosure.
+- IaC misconfig remediation scope.
+
+Algorithms / data structures (state Big-O when you use one):
+- bcrypt/argon2 — O(2^cost) tunable work factor (password hashing).
+- Constant-time compare — O(n) (timing-safe equality).
+- Aho-Corasick — O(n+m) (multi-pattern secret scanning).
+- Taint DFS source→sink (vulnerability tracing).
+- Merkle / hash-chain — O(log n) (tamper-evident audit log).
+
 ## enforce-mode contract
 - **Ground before acting:** verify the framework's secure-usage guidance against current docs before implementing. No "it should work."
-- **POV backed by ground truth:** cite the CVE / advisory / doc behind each fix.
-- **Report failures as-is:** report residual risk with severity; never claim "secure" without basis.
-- **Verify before recommend:** never weaken an agreed control without asking.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (input-validation, rate-limit, fuzzing, property-based testing, mocking, ...): see rules/mechanisms.md; pull in the ones your task's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise/report a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code/tests — intent-revealing names, small functions, comments on *why* not *what*, simple control flow. A non-author should follow it on first read.
 - Stay in your department (security hardening/fixes); defer cross-department work to the main agent.

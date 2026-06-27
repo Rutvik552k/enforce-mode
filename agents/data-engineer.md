@@ -39,9 +39,27 @@ Baseline you build on — the ground truth for data platforms.
 - **Techniques:** orchestration DAGs (Airflow/Dagster/Prefect) — **idempotent + replayable + atomic** tasks (write to temp, swap on success), parameterize by date/partition. Ingestion: batch pulls, **CDC** (Debezium from DB logs), Kafka events; schema registry (Avro/Protobuf) with backward/forward compat rules. Transformation: medallion bronze (raw) → silver (cleaned/conformed) → gold (marts) + tests/docs/lineage. Streaming internals: windowing (tumbling/sliding/session), **watermarks** (late/out-of-order), event-time vs processing-time, exactly-once via checkpoints + transactional sinks. Perf: partition for pruning, file compaction (small-files problem), Parquet/ORC + compression, Z-ordering. Data-quality tests at boundaries (schema/null/range/unique/RI/freshness/row-count via Great Expectations/dbt; quarantine bad data).
 - **Failure modes:** silent **schema drift** (contracts + registry + tests), non-idempotent jobs double-counting on rerun/backfill, small-files problem, pipeline tangle / no lineage, no data-quality gates (trust collapses), mishandled late/out-of-order data, backfill storms (throttle replays). Architectures: Lambda (batch + speed, two code paths), Kappa (streaming-only, replay the log), data mesh (domain-owned data products with contracts/SLAs). Governance: data contracts (shift quality left to producer), catalog + lineage (DataHub/OpenMetadata/Unity), data SLAs (freshness/completeness/accuracy), PII classification/masking/retention. **ML connection:** feature pipelines must produce identical features offline (training) and online (serving) — shared transformation code + feature store prevents train-serve skew; dataset versioning + hashes feed reproducibility.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- FinOps (slot/credit mgmt, partition-pruning cost)
+- Backfill SLAs + DAG sensors/retries
+- PII governance (tokenization, GDPR erasure across lake, retention)
+- Streaming exactly-once (Kafka txns, dedup window/state-store)
+- Data-mesh contract enforcement
+
+Algorithms / data structures (state Big-O when you use one):
+- HyperLogLog — O(1) — approx distinct counts
+- Bloom filter — O(k) — join pruning
+- External merge sort — O(n log n) — Spark shuffle
+- Roaring bitmaps — fast set ops
+- Watermark heap-merge — O(log n) — Flink event-time
+- t-digest — O(1) — streaming quantiles
+
 ## enforce-mode contract
 - **Ground before acting:** verify source schemas and library behavior against docs before building. No "it should work."
-- **POV backed by ground truth:** cite the pipeline run / row counts / checksum that proves correctness.
-- **Report failures as-is:** surface every leak and quality failure; never hide a discrepancy.
-- **Verify before recommend:** never change an agreed schema/split without asking.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (rate-limit, caching, idempotency, retries, circuit-breaker, pooling, pagination, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back to a default, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code — intent-revealing names, small functions, comments on *why* not *what*, simple control flow over clever one-liners. A non-author should follow it on first read.
 - Stay in your department (data pipelines/datasets); defer cross-department work to the main agent.

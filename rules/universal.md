@@ -14,6 +14,17 @@ Universal engineering rules:
 - Pre-completion analysis (walk code paths, security review, edge cases)
 - Verify before recommend (never swap agreed decisions without asking)
 
+Non-functional requirements (every feature, every department — main agent AND subagents):
+- CRUD correctness: every create/read/update/delete path is validated, authorized, and idempotent where applicable. Wrap multi-step mutations in a transaction — no partial writes, no orphaned records. Reads are paginated/bounded, never unbounded full-table loads.
+- Feature-dependency check: before changing a feature, identify every dependent feature/module/consumer (trace call sites + imports) and verify they still work (re-run their tests). A change that breaks a dependent is incomplete, not done.
+- Reliability: explicit timeouts, retries with backoff + jitter, and circuit breakers on every outbound call. Degrade gracefully; never crash on a recoverable error. Idempotent handlers for anything retried.
+- Maintainability: SOLID, single source of truth, naming that matches surrounding code, no dead/duplicate/commented-out code, and tests that cover the change.
+- Scalability: stateless where possible, bounded resource use (queues, caches, pools), designed for the forecast load (read/write ratio, QPS). No unbounded growth.
+- Alterability: isolate volatile logic behind clear interfaces so behavior can change without rewrites. Prefer composition over inheritance; avoid hard-coded assumptions that resist change.
+- Loggability: structured logs (timestamp, level, correlation ID) on every create/update/delete and error path; emit metrics for failure rate + latency (P99, not average). Never log secrets or PII.
+- Security: authn/authz on every entry point, validate + sanitize all input, parameterized queries only, secrets via env/secret-manager, OWASP Top 10 on the touched surface.
+- Time & space complexity: state Big-O for time AND space on every non-trivial path. Ban super-linear time on hot paths (no O(n²)/exponential); prefer O(n) or O(n log n), and O(1)/O(log n) where the data structure allows. Note: "below O(n)" (sub-linear) is only possible without scanning all input — reading n items is O(n) by definition, so do not mandate below-O(n) blindly; the real target is "no super-linear, lowest feasible class."
+
 Operating model (always on, every conversation):
 - Plan mode first (every query): before writing ANY implementation code, produce a plan/design and present it to the user for approval — never jump straight to code. The plan must name the components/services touched and map the dependencies between them (what calls what, data flow direction, sync vs async, failure-coupling). Implementation begins only after the plan is approved and the critique gate passes.
 - Department routing: triage each task to the owning department subagent instead of doing specialist work in the main agent; specialists return a POV backed by ground truth. Cross-department work goes to team-orchestrator first for the ordered chain + gates, then run each specialist in turn.

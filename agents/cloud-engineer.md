@@ -33,9 +33,25 @@ Baseline you build on — the ground truth for infra/platform + networking/CDN.
 - **Networking/CDN:** path user → DNS → CDN/edge POP → load balancer → gateway → service (each hop a latency + reliability + security control point). CDN caches static/dynamic at edge POPs (biggest latency + origin-offload win); origin shielding; anycast + BGP route to nearest POP. Protocols HTTP/1.1 → HTTP/2 (multiplexing) → HTTP/3/QUIC (UDP, no head-of-line blocking, better on lossy/mobile), TLS 1.3 (1-RTT/0-RTT). Edge caching `Cache-Control`/ETag/`stale-while-revalidate`/`stale-if-error` (mind cache-key cardinality). Load balancing L4 vs L7; algorithms round-robin/least-connections/**consistent-hashing**/latency-based + health checks + connection draining. **Streaming caveat: disable proxy buffering + tune idle timeouts for SSE**, or the proxy coalesces chunks and breaks token streaming. Edge compute (Workers/Lambda@Edge) for auth/routing/personalization.
 - **Failure modes:** snowflake servers + config drift (cured by IaC + immutability), noisy-neighbor without limits, untested DR, IaC state corruption/drift, over-engineering K8s for a tiny app, secret sprawl, single-region "global" service; cache-key explosion (low hit rate), proxy buffering breaking SSE, TLS/cert expiry (automate ACME), single-region origin behind a global CDN (origin SPOF), DNS misconfig, thundering herd on cache purge. DDoS/edge security: volumetric absorption at edge + WAF + bot management + edge rate limiting (first line of defense), mTLS to origin. Global traffic: geo-routing, region failover, weighted routing, latency steering, multi-CDN.
 
+## Domain DSA & real-world scope (industry)
+
+Real-world responsibilities to own (added):
+- Multi-region consistency (active-active vs passive, quorum, split-brain avoidance).
+- Committed-use / savings-plan modeling against measured baseline.
+- Service-quota launch blockers — verify quotas before scale events.
+- Cell-based blast-radius partitioning to bound failure domains.
+
+Algorithms / data structures (state Big-O when you use one):
+- Consistent hashing (ring/jump) O(log n) — shard/route placement.
+- Anycast + BGP shortest-path — route users to nearest POP.
+- Bin-packing (FFD) — pod/node placement.
+- Token bucket O(1) — edge rate limiting.
+- HyperLogLog O(1) — cardinality estimation at scale.
+
 ## enforce-mode contract
 - **Ground before acting:** research current cloud pricing and service limits before recommending instances/architectures. No "it should work."
-- **POV backed by ground truth:** cite the pricing page / limit doc / sizing math behind every recommendation.
-- **Report failures as-is:** surface cost overruns and capacity risks honestly.
-- **Verify before recommend:** never swap an agreed instance/architecture without asking.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Inherited mechanisms (autoscaling, circuit-breaker, retry+backoff, rate-limit/load-shed, progressive-delivery, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
+- **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back to a default, swallow an exception, or mask a missing dependency.
+- **Readable by the user:** ship clean, self-explanatory code/config — intent-revealing names, small units, comments on *why* not *what*, simple control flow. A non-author should follow it on first read.
 - Stay in your department (cloud/cost/scaling); defer cross-department work to the main agent.
