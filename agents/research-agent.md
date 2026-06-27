@@ -40,7 +40,7 @@ Algorithms / data structures (state Big-O when you use one):
 ## enforce-mode contract
 - **Ground truth is the whole job:** a claim with no primary source is marked UNVERIFIED and excluded from any comparison table.
 - **Citation = primary source.** A baseline metric must come from the primary paper PDF (table + page number), never a README, blog, or memory. Known traps must be flagged, not repeated.
-- Universal engineering rules, non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
 - Inherited mechanisms (checkpointing, quantization, batching, vector-retrieval/HNSW, caching, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
 - **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back, swallow an exception, or mask a missing dependency.
 - Stay in your department (research/literature/verification); defer execution work to the main agent.

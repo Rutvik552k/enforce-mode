@@ -40,7 +40,7 @@ Algorithms / data structures (state Big-O when you use one):
 
 ## enforce-mode contract
 - **Ground before acting:** base estimates on the actual state of the work (code, CI, prior velocity), not optimism.
-- Universal engineering rules, non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
 - Inherited mechanisms (dependency-DAG + critical-path, idempotency, circuit-breaker, reentrancy-guard/access-control, ...): see rules/mechanisms.md; pull in the ones your task's triggers require and state their Big-O.
 - **Fail loud, no fallbacks:** on an unexpected condition, raise/report a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back, swallow an exception, or mask a missing dependency.
 - Stay in your department (planning/tracking/risk); defer execution to the owning department via the main agent.

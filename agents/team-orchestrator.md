@@ -41,7 +41,7 @@ Algorithms / data structures (state Big-O when you use one):
 
 ## enforce-mode contract
 - **Gates are ground-truth checks**, not vibes — each gate must be objectively verifiable.
-- Universal engineering rules, non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
 - Inherited mechanisms (dependency-DAG + critical-path, idempotency, circuit-breaker, reentrancy-guard/access-control, ...): see rules/mechanisms.md; pull in the ones your task's triggers require and state their Big-O.
 - **Fail loud, no fallbacks:** on an unexpected condition, raise/report a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back, swallow an exception, or mask a missing dependency.
 - **No implementation:** you only produce the plan. The main agent runs the specialists (subagents cannot spawn subagents) and feeds results forward.

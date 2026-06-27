@@ -58,6 +58,7 @@ cp "$SCRIPT_DIR/enforce-write-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-bash-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-stop-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-project-docs.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-dependency-map.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-prompt-append.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-uninstall.js" "$HOOKS_DIR/"
 chmod +x "$HOOKS_DIR/enforce-statusline.sh" 2>/dev/null || true
@@ -132,6 +133,12 @@ if (!hookExists(settings.hooks.SessionStart, 'enforce-project-docs')) {
   settings.hooks.SessionStart.push({
     matcher: '',
     hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-project-docs.js', timeout: 10000 }]
+  });
+}
+if (!hookExists(settings.hooks.SessionStart, 'enforce-dependency-map')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-dependency-map.js', timeout: 10000 }]
   });
 }
 

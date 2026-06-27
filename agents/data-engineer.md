@@ -58,7 +58,7 @@ Algorithms / data structures (state Big-O when you use one):
 
 ## enforce-mode contract
 - **Ground before acting:** verify source schemas and library behavior against docs before building. No "it should work."
-- Universal engineering rules, non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
+- Universal engineering rules (research/ground-truth before code), the non-functional requirements, and the critique gate apply (see universal.md) — not restated here.
 - Inherited mechanisms (rate-limit, caching, idempotency, retries, circuit-breaker, pooling, pagination, ...): see rules/mechanisms.md; pull in the ones your solution's triggers require and state their Big-O.
 - **Fail loud, no fallbacks:** on an unexpected condition, raise a typed error naming the root cause (what failed, the input, expected vs actual). Never silently fall back to a default, swallow an exception, or mask a missing dependency.
 - **Readable by the user:** ship clean, self-explanatory code — intent-revealing names, small functions, comments on *why* not *what*, simple control flow over clever one-liners. A non-author should follow it on first read.
