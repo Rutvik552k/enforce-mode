@@ -52,6 +52,7 @@ $hookFiles = @(
     'enforce-stop-guard.js',
     'enforce-project-docs.js',
     'enforce-dependency-map.js',
+    'enforce-constraint-gate.js',
     'enforce-prompt-append.js',
     'enforce-uninstall.js'
 )
@@ -124,6 +125,12 @@ if (!hookExists(settings.hooks.SessionStart, 'enforce-dependency-map')) {
     hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-dependency-map.js', timeout: 10000 }]
   });
 }
+if (!hookExists(settings.hooks.SessionStart, 'enforce-constraint-gate')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-constraint-gate.js', timeout: 10000 }]
+  });
+}
 
 if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
 if (!hookExists(settings.hooks.UserPromptSubmit, 'enforce-mode-tracker')) {
@@ -156,6 +163,12 @@ if (!hookExists(settings.hooks.PreToolUse, 'enforce-bash-guard')) {
   settings.hooks.PreToolUse.push({
     matcher: 'Bash',
     hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-bash-guard.js', timeout: 5000 }]
+  });
+}
+if (!hookExists(settings.hooks.PreToolUse, 'enforce-constraint-gate')) {
+  settings.hooks.PreToolUse.push({
+    matcher: 'Write|Edit|NotebookEdit',
+    hooks: [{ type: 'command', command: 'node $HooksDirFwd/enforce-constraint-gate.js', timeout: 5000 }]
   });
 }
 

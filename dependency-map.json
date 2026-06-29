@@ -168,6 +168,16 @@
       "affectedBy": ["installer", "plugin-hooks"]
     },
     {
+      "id": "constraint-gate",
+      "files": ["hooks/enforce-constraint-gate.js"],
+      "operations": "Layer-1 constraint intake gate (ADVISORY). SessionStart: warn if constraints.json missing. PreToolUse Write|Edit: on implementation code with no captured production constraints, inject a strong advisory + record pending. Never blocks.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "soft", "contract": "defensive require('./enforce-state') for isActive/isExempt/recordPending/logEvent; degrades to no-op if absent" },
+        { "target": "constraints-files", "coupling": "soft", "contract": "reads cwd constraints.json (existence + has features)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
       "id": "installer",
       "files": ["hooks/install.sh", "hooks/install.ps1"],
       "operations": "Copy hooks/*.js + rules/*.md + SKILL.md to ~/.claude; wire settings.json hooks + statusLine; write rules-manifest.",

@@ -37,10 +37,12 @@ response (GTC). Goal in `CLAUDE.md` (web-scrape MCP) is aspirational; the repo i
 SessionStart      → activation (resolve level → build+inject rules → write flag → ensure statusline)
                   → project-docs (warn if CLAUDE.md/architecture.md/progress.md missing)
                   → dependency-map (warn if dependency-map.json/.md missing)
+                  → constraint-gate (warn if constraints.json missing)
 UserPromptSubmit  → prompt-append (inject static enforce reminder)
                   → level-switch (parse /enforce cmd)
                   → mode-tracker (sync level → state + flag)   [installer-only]
 PreToolUse W|E    → write-guard (PECK checks + grounding gate)
+                  → constraint-gate (advise if impl code lacks captured constraints)
 PreToolUse Bash   → bash-guard                                  [installer-only]
 Stop              → stop-guard (unresolved/test gate + compute & record GTC)
 ```

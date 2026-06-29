@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "_help": "Production constraints per feature/service. Key each entry by the SAME id used in dependency-map.json so constraints and dependencies align. A design with no SLO is not production-grade. Never put secrets here. Copy this file to constraints.json and fill in real values with the user.",
+  "features": {
+    "<feature-or-service-id>": {
+      "slo": {
+        "p99_latency_ms": 0,
+        "availability": "99.9%",
+        "error_budget": "0.1%/30d"
+      },
+      "load": {
+        "qps": 0,
+        "peak_qps": 0,
+        "read_write_ratio": "10:1",
+        "data_volume": "rows/GB today",
+        "growth": "%/year"
+      },
+      "tenancy": "single | multi-tenant",
+      "data_sensitivity": "public | internal | PII | PCI | PHI",
+      "budget": "$/month ceiling",
+      "team_size": 0,
+      "failure_tolerance": "fail-closed | degrade-readonly | best-effort",
+      "notes": "anything else that constrains the design"
+    }
+  }
+}

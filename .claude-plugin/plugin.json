@@ -53,6 +53,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-dependency-map.js",
             "timeout": 10,
             "statusMessage": "Checking dependency map..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-constraint-gate.js",
+            "timeout": 10,
+            "statusMessage": "Checking production constraints..."
           }
         ]
       }
@@ -66,6 +72,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-write-guard.js",
             "timeout": 10,
             "statusMessage": "Enforcing write rules..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-constraint-gate.js",
+            "timeout": 10,
+            "statusMessage": "Checking production constraints..."
           }
         ]
       }

@@ -9,6 +9,7 @@ _(none — see dependency-map.md "Known issues" for tracked architectural debt: 
 
 ## Closed Tasks
 
+- [x] Layer-1 Constraint Intake Gate: `enforce-constraint-gate.js` (advisory; SessionStart warn + PreToolUse advise on impl code with no captured constraints) + `constraints.json` + `constraints.template.json` + universal.md rule + append reminder; wired into both installers + plugin.json (no drift). Verified: test-constraint-gate 7/0; agents/rules/detect green.
 - [x] Create living dependency artifact `dependency-map.json` + `dependency-map.md` (plugin component graph: nodes, depends-on, affected-by, contracts). Surfaced 4 grounded findings (1 CRITICAL installer edge).
 - [x] Create `architecture.md` (tech stack + workflow + data-flow of the plugin).
 - [x] Add orient-before-building reminder to `enforce-prompt-append.js` (subagents read CLAUDE.md/architecture.md/dependency-map.json at task start). Verified: hook emits valid JSON.
