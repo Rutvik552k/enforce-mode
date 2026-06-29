@@ -16,6 +16,7 @@
 // re-state it, to avoid re-injecting ~290 words every turn.
 const APPEND_TEXT = [
   'ENFORCE active. Obey universal.md (already in context — full detail lives there). Per-turn reminders:',
+  '- Orient before building (every task/subagent start): read CLAUDE.md (goal), architecture.md (stack + data-flow), and dependency-map.json (your node’s depends-on + affected-by edges) to learn existing dependencies and where your piece fits. Never build blind; if those docs are missing, ask to create them.',
   '- Plan first: before any implementation code, present a plan (components/services touched + dependency map — what calls what, data-flow, sync vs async) and get approval; write code only after approval + the critique gate passes.',
   '- Ambiguous query, or any decision the user owns (scope/trade-off/grounded concern) → STOP, ask via AskUserQuestion with option cards, never free-text.',
   '- Route each task to its owning department subagent (universal.md routing map); no specialist work in the main agent. Dispatch in background; never block or idle on one.',
