@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "_help": "Production constraints for the enforce-mode plugin itself, keyed to dependency-map.json node ids. The plugin is a dev tool, not a network service, so its constraints are runtime/quality budgets rather than QPS/SLO. See constraints.template.json for the service-shaped schema.",
+  "features": {
+    "hooks-runtime": {
+      "slo": {
+        "per_hook_latency_ms": 100,
+        "availability": "must never break the host session",
+        "error_budget": "exit 0 always — advisory, never blocks"
+      },
+      "load": {
+        "qps": "one invocation per Claude Code lifecycle event",
+        "read_write_ratio": "read-mostly (state JSON + rule files)",
+        "data_volume": "per-session state JSON, small",
+        "growth": "bounded by session count"
+      },
+      "tenancy": "single (per user ~/.claude)",
+      "data_sensitivity": "internal — never log secrets/PII; secrets scanned, never stored",
+      "budget": "$0 — zero runtime deps, local only",
+      "team_size": 1,
+      "failure_tolerance": "degrade-readonly — every hook try/catch → exit 0; a hook failure must not block the user",
+      "notes": "Node stdlib only; cross-platform (win/mac/linux); ~100ms/hook target."
+    },
+    "agents": {
+      "slo": { "availability": "loaded as plugin agents; validated by tests/test-agents.js" },
+      "load": { "data_volume": "28 markdown agent definitions" },
+      "tenancy": "single",
+      "data_sensitivity": "public (definitions only)",
+      "budget": "$0",
+      "team_size": 1,
+      "failure_tolerance": "best-effort — a malformed agent fails its own test, not the suite",
+      "notes": "Each agent carries Domain DSA + enforce contract; see rules/mechanisms.md for inherited mechanisms."
+    }
+  }
+}

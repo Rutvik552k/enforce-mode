@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "project": "enforce-mode",
+  "description": "Living dependency map of the enforce-mode Claude Code plugin. Nodes are logical components; edges are grounded in actual require()/file-read-write/installer-copy lines. Source of truth — keep in sync with code (see dependency-map.md for the human view).",
+  "contracts": {
+    "state-json": "Per-session JSON at getStatePath(sessionId) under ~/.claude; read/written by enforce-state.js. Carries PECK ticks, compliance, ground-truth, GTC.",
+    "flag-file": "~/.claude/.enforce-active (plain level string). Writers: activation, level-switch, mode-tracker, config. Reader: statusline.",
+    "rules-manifest": "~/.claude/.enforce-rules-manifest. Written by installers, read by uninstall to remove the exact domain-rule set."
+  },
+  "couplingLegend": { "hard": "breaks on change of the target", "soft": "try-guarded / degrades but does not crash" },
+  "nodes": [
+    {
+      "id": "state-store",
+      "files": ["hooks/enforce-state.js"],
+      "operations": "Core session state read/write (PECK ticks, compliance, ground-truth, GTC compute/format/record); atomic temp+rename.",
+      "dependsOn": [
+        { "target": "grounding", "coupling": "soft", "contract": "try-guarded require('./enforce-grounding') for BUILTIN_METHODS (enforce-state.js:42)" },
+        { "target": "state-json", "coupling": "hard", "contract": "reads/writes sessionId-keyed JSON" }
+      ],
+      "affectedBy": ["activation", "guards-pretooluse", "stop-completion", "mode-tracker", "level-switch", "skills", "session-snapshot", "advisory-guards-unwired"]
+    },
+    {
+      "id": "config",
+      "files": ["hooks/enforce-config.js"],
+      "operations": "Resolve default level (env > config.json > settings.json); write flag-file.",
+      "dependsOn": [
+        { "target": "flag-file", "coupling": "hard", "contract": "write level (enforce-config.js:132)" },
+        { "target": "settings.json", "coupling": "hard", "contract": "read/write ~/.claude/settings.json (:119-124)" }
+      ],
+      "affectedBy": ["activation", "level-switch", "mode-tracker", "session-snapshot"]
+    },
+    {
+      "id": "detect",
+      "files": ["hooks/enforce-detect.js"],
+      "operations": "Scan project manifests (package.json/requirements/go.mod/...) → domain list; single readdirSync.",
+      "dependsOn": [
+        { "target": "project-manifests", "coupling": "soft", "contract": "read manifest files (enforce-detect.js:25-112,284)" }
+      ],
+      "affectedBy": ["activation", "advisory-guards-unwired"]
+    },
+    {
+      "id": "rules",
+      "files": ["hooks/enforce-rules.js", "hooks/enforce-compress.js", "rules/universal.md", "rules/mechanisms.md"],
+      "operations": "buildContext(): read rule .md files, compress, assemble injected context.",
+      "dependsOn": [
+        { "target": "enforce-compress", "coupling": "hard", "contract": "require('./enforce-compress') (enforce-rules.js:18)" },
+        { "target": "rules-md", "coupling": "hard", "contract": "read rule .md files (enforce-rules.js:141)" }
+      ],
+      "affectedBy": ["activation"]
+    },
+    {
+      "id": "anchor",
+      "files": ["hooks/enforce-anchor.js"],
+      "operations": "Detect/read enforce-anchor markers in project CLAUDE.md.",
+      "dependsOn": [
+        { "target": "project-claude-md", "coupling": "soft", "contract": "read project CLAUDE.md (enforce-anchor.js:38,52)" }
+      ],
+      "affectedBy": ["activation"]
+    },
+    {
+      "id": "grounding",
+      "files": ["hooks/enforce-grounding.js"],
+      "operations": "Extract API symbols, ground against researched libs; BUILTIN_METHODS table.",
+      "dependsOn": [],
+      "affectedBy": ["state-store", "guards-pretooluse"]
+    },
+    {
+      "id": "activation",
+      "files": ["hooks/enforce-activate.js"],
+      "operations": "SessionStart: resolve level, build+inject rules, write flag, ensure statusline.",
+      "dependsOn": [
+        { "target": "config", "coupling": "hard", "contract": "require (enforce-activate.js:20-24)" },
+        { "target": "detect", "coupling": "hard", "contract": "require (enforce-activate.js:20-24)" },
+        { "target": "rules", "coupling": "hard", "contract": "require (enforce-activate.js:20-24)" },
+        { "target": "state-store", "coupling": "hard", "contract": "require (enforce-activate.js:20-24)" },
+        { "target": "anchor", "coupling": "hard", "contract": "require('./enforce-anchor') (enforce-activate.js:24)" },
+        { "target": "statusline", "coupling": "soft", "contract": "lazy require statusline-setup (:166)" },
+        { "target": "flag-file", "coupling": "hard", "contract": "write level (:128)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
+      "id": "prompt-append",
+      "files": ["hooks/enforce-prompt-append.js"],
+      "operations": "UserPromptSubmit: inject static enforce reminder (orient-before-building, plan-first, routing, critique gate, fail-loud, living-docs, task-loop). No internal require/fs.",
+      "dependsOn": [],
+      "affectedBy": ["installer", "plugin-hooks"],
+      "note": "Code-isolated; coupled only via hook registration. Content mirrors universal.md (references, does not restate)."
+    },
+    {
+      "id": "level-switch",
+      "files": ["hooks/enforce-level-switch.js"],
+      "operations": "UserPromptSubmit: parse /enforce command → setLevel + write flag.",
+      "dependsOn": [
+        { "target": "config", "coupling": "soft", "contract": "try require (:66-67)" },
+        { "target": "state-store", "coupling": "soft", "contract": "try require (:66-67)" },
+        { "target": "flag-file", "coupling": "hard", "contract": "write level (:81)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
+      "id": "mode-tracker",
+      "files": ["hooks/enforce-mode-tracker.js"],
+      "operations": "UserPromptSubmit: sync level → state + flag.",
+      "dependsOn": [
+        { "target": "config", "coupling": "hard", "contract": "require (:15-16)" },
+        { "target": "state-store", "coupling": "hard", "contract": "require (:15-16)" },
+        { "target": "flag-file", "coupling": "hard", "contract": "write level (:56)" }
+      ],
+      "affectedBy": ["installer"]
+    },
+    {
+      "id": "guards-pretooluse",
+      "files": ["hooks/enforce-write-guard.js", "hooks/enforce-bash-guard.js"],
+      "operations": "PreToolUse Write|Edit / Bash: PECK advisory checks, grounding gate.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "hard", "contract": "require('./enforce-state') (write-guard:24, bash-guard:22)" },
+        { "target": "grounding", "coupling": "hard", "contract": "require('./enforce-grounding') (write-guard:25)" },
+        { "target": "transcript", "coupling": "soft", "contract": "read transcript (bash-guard:142)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
+      "id": "stop-completion",
+      "files": ["hooks/enforce-stop-guard.js"],
+      "operations": "Stop: unresolved/test gate summary, compute+record GTC score, read transcript.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "hard", "contract": "require('./enforce-state') computeGTC/formatGTC/recordGTCScore (:31)" },
+        { "target": "transcript", "coupling": "soft", "contract": "read transcript (:139)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
+      "id": "gtc-scoring",
+      "files": [],
+      "operations": "GTC (ground-truth-confidence) scoring; logic in state-store, surfaced by stop-completion.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "hard", "contract": "computeGTC/formatGTC/recordGTCScore live in enforce-state.js" }
+      ],
+      "affectedBy": ["stop-completion"]
+    },
+    {
+      "id": "statusline",
+      "files": ["hooks/enforce-statusline.sh", "hooks/enforce-statusline.ps1", "hooks/enforce-statusline-setup.js"],
+      "operations": "statusLine command renders level badge from flag; setup writes scripts + settings.",
+      "dependsOn": [
+        { "target": "flag-file", "coupling": "hard", "contract": "read level (.sh:8 / .ps1:7)" },
+        { "target": "settings.json", "coupling": "hard", "contract": "write statusLine (setup:163,177)" }
+      ],
+      "affectedBy": ["activation", "installer"]
+    },
+    {
+      "id": "project-docs",
+      "files": ["hooks/enforce-project-docs.js"],
+      "operations": "SessionStart: warn if CLAUDE.md/architecture.md/progress.md missing.",
+      "dependsOn": [
+        { "target": "project-docs-files", "coupling": "soft", "contract": "existence check (enforce-project-docs.js:49)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
+      "id": "dependency-map",
+      "files": ["hooks/enforce-dependency-map.js"],
+      "operations": "SessionStart: warn if dependency-map.json/.md missing; emit contract guidance.",
+      "dependsOn": [
+        { "target": "dependency-map-files", "coupling": "soft", "contract": "existsSync cwd dependency-map.json/.md (:50)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
+      "id": "constraint-gate",
+      "files": ["hooks/enforce-constraint-gate.js"],
+      "operations": "Layer-1 constraint intake gate (ADVISORY). SessionStart: warn if constraints.json missing. PreToolUse Write|Edit: on implementation code with no captured production constraints, inject a strong advisory + record pending. Never blocks.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "soft", "contract": "defensive require('./enforce-state') for isActive/isExempt/recordPending/logEvent; degrades to no-op if absent" },
+        { "target": "constraints-files", "coupling": "soft", "contract": "reads cwd constraints.json (existence + has features)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
+      "id": "installer",
+      "files": ["hooks/install.sh", "hooks/install.ps1"],
+      "operations": "Copy hooks/*.js + rules/*.md + SKILL.md to ~/.claude; wire settings.json hooks + statusLine; write rules-manifest.",
+      "dependsOn": [
+        { "target": "all-hooks", "coupling": "hard", "contract": "copies 21 hook files (install.sh:43-63 / install.ps1:35-57)" },
+        { "target": "rules-md", "coupling": "hard", "contract": "copies universal+mechanisms+domains/*.md (install.sh:70-73 / install.ps1:66-69)" },
+        { "target": "skills", "coupling": "hard", "contract": "copies skills/enforce/SKILL.md" },
+        { "target": "settings.json", "coupling": "hard", "contract": "hook registration" }
+      ],
+      "affectedBy": []
+    },
+    {
+      "id": "uninstall",
+      "files": ["hooks/enforce-uninstall.js"],
+      "operations": "Remove flag, sessions, config, enforce-*.js hooks, manifest-listed domain rules, settings entries.",
+      "dependsOn": [
+        { "target": "rules-manifest", "coupling": "hard", "contract": "read manifest (:125-126)" },
+        { "target": "flag-file", "coupling": "hard", "contract": "remove (:70)" },
+        { "target": "settings.json", "coupling": "hard", "contract": "remove enforce entries" }
+      ],
+      "affectedBy": []
+    },
+    {
+      "id": "session-snapshot",
+      "files": ["hooks/enforce-session-save.js", "hooks/enforce-session-resume.js", "hooks/enforce-session-log.js"],
+      "operations": "Save/resume/append session state to ~/.claude session dir + log.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "hard", "contract": "require('./enforce-state')" },
+        { "target": "config", "coupling": "hard", "contract": "require('./enforce-config') (save:29)" }
+      ],
+      "affectedBy": [],
+      "status": "ORPHANED: not copied by either installer"
+    },
+    {
+      "id": "skills",
+      "files": ["hooks/enforce-skill-registry.js", "hooks/enforce-skill-loader.js", "hooks/enforce-skill-auto-loader.js", "skills/enforce/SKILL.md"],
+      "operations": "Discover/resolve skills, load on write/research transcript triggers, cache.",
+      "dependsOn": [
+        { "target": "skill-registry", "coupling": "hard", "contract": "require('./enforce-skill-registry') (loader:48/auto:37)" },
+        { "target": "state-store", "coupling": "hard", "contract": "require('./enforce-state')" }
+      ],
+      "affectedBy": [],
+      "status": "PARTIAL: only SKILL.md copied by installers; the .js trio is orphaned"
+    },
+    {
+      "id": "advisory-guards-unwired",
+      "files": ["hooks/enforce-domain-guard.js", "hooks/enforce-dsa-guard.js", "hooks/enforce-post-write-check.js", "hooks/enforce-research-capture.js"],
+      "operations": "Domain/DSA/post-write PECK checks + ground-truth capture.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "hard", "contract": "require('./enforce-state')" },
+        { "target": "domain-rules-data", "coupling": "hard", "contract": "domain-guard reads hooks/domains/*.js (:48-49)" },
+        { "target": "detect", "coupling": "hard", "contract": "require (domain-guard:371)" }
+      ],
+      "affectedBy": [],
+      "status": "ORPHANED: not copied/wired by installer or plugin.json"
+    },
+    {
+      "id": "domain-rules-data",
+      "files": ["hooks/domains/*.js (41)", "rules/domains/*.md (41)"],
+      "operations": ".js = per-domain pattern tables consumed by domain-guard; .md = injected rule text copied to ~/.claude.",
+      "dependsOn": [],
+      "affectedBy": ["advisory-guards-unwired", "rules", "installer"],
+      "note": "installer copies the .md half only; the .js half is consumed only by the orphaned domain-guard."
+    },
+    {
+      "id": "agents",
+      "files": ["agents/*.md (28)"],
+      "operations": "Department subagent definitions realizing the CLAUDE.md routing map; each carries Domain DSA + enforce contract.",
+      "dependsOn": [
+        { "target": "rules", "coupling": "soft", "contract": "agents reference universal.md + rules/mechanisms.md by name (loaded as global rules, not a code edge)" }
+      ],
+      "affectedBy": [],
+      "note": "Not copied by hooks/install.*; delivered via plugin marketplace. No code edge."
+    },
+    {
+      "id": "plugin-hooks",
+      "files": [".claude-plugin/plugin.json"],
+      "operations": "Plugin-mode hook registration: UserPromptSubmit(level-switch,prompt-append), SessionStart(activate,project-docs,dependency-map), PreToolUse Write|Edit(write-guard), Stop(stop-guard).",
+      "dependsOn": [
+        { "target": "all-hooks", "coupling": "hard", "contract": "references hook .js by path (plugin.json:23-78)" }
+      ],
+      "affectedBy": []
+    }
+  ],
+  "findings": [
+    { "severity": "CRITICAL", "title": "Broken installer edges", "detail": "grounding + anchor are require()d by copied/wired hooks (enforce-activate.js:24, enforce-write-guard.js:25) but absent from both install.sh and install.ps1 copy lists. Installed enforce-activate.js throws on require('./enforce-anchor')." },
+    { "severity": "STRICT", "title": "Orphaned hooks (installed-form)", "detail": "advisory-guards-unwired (domain-guard, dsa-guard, post-write-check, research-capture), the skills .js trio, and session-snapshot trio have real require edges but no entry point loads them after install (not in installer copy list nor plugin.json)." },
+    { "severity": "WARN", "title": "Copied-but-dead", "detail": "enforce-research-gate.js, enforce-test-gate.js, enforce-pre-completion.js are copied by both installers but have zero inbound require edges and are not wired as hooks." },
+    { "severity": "WARN", "title": "Plugin vs installer drift", "detail": "plugin.json wires 7 hooks; installers wire 9 (add mode-tracker, bash-guard). Divergent registration surfaces." }
+  ]
+}
