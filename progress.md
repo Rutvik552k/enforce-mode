@@ -9,6 +9,7 @@ _(none — see dependency-map.md "Known issues" for tracked architectural debt: 
 
 ## Closed Tasks
 
+- [x] Layer-5/6 Prior-Art Grounding Gate: `enforce-prior-art-gate.js` (advisory; force "study how tech giants solved this algorithmic class — named algorithm + cited source, reverse-engineer + adapt"; cite-or-UNVERIFIED hallucination guard) + `design-dossier.md` + `design-dossier.template.md` + universal.md rule + append reminder + strengthened research-solution-architect & solution-architect; wired into both installers + plugin.json. Verified: test-prior-art-gate 7/0 (incl. uncited-dossier still fires); regressions green.
 - [x] Layer-1 Constraint Intake Gate: `enforce-constraint-gate.js` (advisory; SessionStart warn + PreToolUse advise on impl code with no captured constraints) + `constraints.json` + `constraints.template.json` + universal.md rule + append reminder; wired into both installers + plugin.json (no drift). Verified: test-constraint-gate 7/0; agents/rules/detect green.
 - [x] Create living dependency artifact `dependency-map.json` + `dependency-map.md` (plugin component graph: nodes, depends-on, affected-by, contracts). Surfaced 4 grounded findings (1 CRITICAL installer edge).
 - [x] Create `architecture.md` (tech stack + workflow + data-flow of the plugin).

@@ -38,11 +38,13 @@ SessionStart      → activation (resolve level → build+inject rules → write
                   → project-docs (warn if CLAUDE.md/architecture.md/progress.md missing)
                   → dependency-map (warn if dependency-map.json/.md missing)
                   → constraint-gate (warn if constraints.json missing)
+                  → prior-art-gate (warn if design-dossier.md missing)
 UserPromptSubmit  → prompt-append (inject static enforce reminder)
                   → level-switch (parse /enforce cmd)
                   → mode-tracker (sync level → state + flag)   [installer-only]
 PreToolUse W|E    → write-guard (PECK checks + grounding gate)
                   → constraint-gate (advise if impl code lacks captured constraints)
+                  → prior-art-gate (advise if impl code lacks a cited design dossier)
 PreToolUse Bash   → bash-guard                                  [installer-only]
 Stop              → stop-guard (unresolved/test gate + compute & record GTC)
 ```
