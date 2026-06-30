@@ -89,6 +89,7 @@ graph TD
 | **project-docs** | enforce-project-docs.js | project docs existence (soft) | installer, plugin-hooks |
 | **dependency-map** | enforce-dependency-map.js | dependency-map.json/.md existence (soft) | installer, plugin-hooks |
 | **constraint-gate** | enforce-constraint-gate.js | state-store (soft, defensive), constraints.json existence | installer, plugin-hooks |
+| **prior-art-gate** | enforce-prior-art-gate.js | state-store (soft, defensive), design-dossier.md (cited) existence | installer, plugin-hooks |
 | **installer** | install.sh, install.ps1 | all hooks, rule .md, SKILL.md, settings.json | — |
 | **uninstall** | enforce-uninstall.js | rules-manifest, flag, settings.json | — |
 | **session-snapshot** ⚠️ | enforce-session-{save,resume,log}.js | state-store, config (hard) | — *(orphaned: not installed)* |

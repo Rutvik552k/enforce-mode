@@ -60,6 +60,7 @@ cp "$SCRIPT_DIR/enforce-stop-guard.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-project-docs.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-dependency-map.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-constraint-gate.js" "$HOOKS_DIR/"
+cp "$SCRIPT_DIR/enforce-prior-art-gate.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-prompt-append.js" "$HOOKS_DIR/"
 cp "$SCRIPT_DIR/enforce-uninstall.js" "$HOOKS_DIR/"
 chmod +x "$HOOKS_DIR/enforce-statusline.sh" 2>/dev/null || true
@@ -148,6 +149,12 @@ if (!hookExists(settings.hooks.SessionStart, 'enforce-constraint-gate')) {
     hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-constraint-gate.js', timeout: 10000 }]
   });
 }
+if (!hookExists(settings.hooks.SessionStart, 'enforce-prior-art-gate')) {
+  settings.hooks.SessionStart.push({
+    matcher: '',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-prior-art-gate.js', timeout: 10000 }]
+  });
+}
 
 // UserPromptSubmit
 if (!settings.hooks.UserPromptSubmit) settings.hooks.UserPromptSubmit = [];
@@ -192,6 +199,14 @@ if (!hookExists(settings.hooks.PreToolUse, 'enforce-constraint-gate')) {
   settings.hooks.PreToolUse.push({
     matcher: 'Write|Edit|NotebookEdit',
     hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-constraint-gate.js', timeout: 5000 }]
+  });
+}
+
+// PreToolUse — prior-art gate
+if (!hookExists(settings.hooks.PreToolUse, 'enforce-prior-art-gate')) {
+  settings.hooks.PreToolUse.push({
+    matcher: 'Write|Edit|NotebookEdit',
+    hooks: [{ type: 'command', command: 'node $NODE_HOOKS_DIR/enforce-prior-art-gate.js', timeout: 5000 }]
   });
 }
 

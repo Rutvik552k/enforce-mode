@@ -59,6 +59,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-constraint-gate.js",
             "timeout": 10,
             "statusMessage": "Checking production constraints..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-prior-art-gate.js",
+            "timeout": 10,
+            "statusMessage": "Checking prior-art grounding..."
           }
         ]
       }
@@ -78,6 +84,12 @@
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-constraint-gate.js",
             "timeout": 10,
             "statusMessage": "Checking production constraints..."
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/enforce-prior-art-gate.js",
+            "timeout": 10,
+            "statusMessage": "Checking prior-art grounding..."
           }
         ]
       }

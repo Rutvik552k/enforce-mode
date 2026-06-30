@@ -178,6 +178,16 @@
       "affectedBy": ["installer", "plugin-hooks"]
     },
     {
+      "id": "prior-art-gate",
+      "files": ["hooks/enforce-prior-art-gate.js"],
+      "operations": "Layer-5/6 prior-art grounding gate (ADVISORY). SessionStart: warn if design-dossier.md missing. PreToolUse Write|Edit: on implementation code with no CITED design dossier, inject advisory (study how production systems solved the class, named algorithm + cited source; uncited = UNVERIFIED). Never blocks.",
+      "dependsOn": [
+        { "target": "state-store", "coupling": "soft", "contract": "defensive require('./enforce-state'); degrades to no-op if absent" },
+        { "target": "design-dossier-file", "coupling": "soft", "contract": "reads cwd design-dossier.md (existence + ≥1 citation)" }
+      ],
+      "affectedBy": ["installer", "plugin-hooks"]
+    },
+    {
       "id": "installer",
       "files": ["hooks/install.sh", "hooks/install.ps1"],
       "operations": "Copy hooks/*.js + rules/*.md + SKILL.md to ~/.claude; wire settings.json hooks + statusLine; write rules-manifest.",
