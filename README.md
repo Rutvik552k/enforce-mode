@@ -358,10 +358,11 @@ actually happened; Claude does not grade itself.
 ---
 
 <p align="center">
-  <b>v3.12.0</b> — advisory-only model (never blocks or denies), live
+  <b>v3.13.0</b> — advisory-only model (never blocks or denies), live
   <code>/enforce</code> level switching, 28 tech-stack-aware department agents
   with per-domain DSA + a shared inherited-mechanisms matrix, non-functional
-  requirements baked into every agent, 41 project domains, grounded-generation
-  (API-symbol attribution), GTC scoring, dual output (terminal + context),
+  requirements baked into every agent, constraint-intake + prior-art grounding
+  gates, living dependency-map/architecture/constraints docs, 41 project domains,
+  grounded-generation (API-symbol attribution), GTC scoring, dual output (terminal + context),
   zero dependencies
 </p>
